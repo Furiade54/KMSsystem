@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>KMS - Knowledge Management System</title>
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('kms_theme_mode');
+          var useDark;
+          if (mode === 'dark') useDark = true;
+          else if (mode === 'light') useDark = false;
+          else {
+            useDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          }
+          var html = document.documentElement;
+          if (useDark) {
+            html.classList.add('dark');
+            html.style.colorScheme = 'dark';
+          } else {
+            html.classList.remove('dark');
+            html.style.colorScheme = 'light';
+          }
+        } catch (_e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-background text-gray-800 dark:text-gray-200 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* LIGHT MODE (default) */
+    --color-background: 248 250 252;
+    --color-background-soft: 241 245 249;
+    --color-background-card: 255 255 255;
+    --color-background-hover: 226 232 240;
+
+    --color-surface: 255 255 255;
+    --color-surface-primary: 255 255 255;
+    --color-surface-secondary: 248 250 252;
+    --color-surface-tertiary: 241 245 249;
+
+    --color-border: 226 232 240;
+    --color-border-soft: 241 245 249;
+
+    --color-foreground: 15 23 42;
+    --color-muted-foreground: 100 116 139;
+
+    --color-white: 255 255 255;
+    --color-gray-100: 241 245 249;
+    --color-gray-200: 226 232 240;
+    --color-gray-300: 203 213 225;
+    --color-gray-400: 148 163 184;
+    --color-gray-500: 100 116 139;
+    --color-gray-600: 71 85 105;
+    --color-gray-700: 51 65 85;
+    --color-gray-800: 30 41 59;
+    --color-gray-900: 15 23 42;
+
+    --color-accent: 99 102 241;
+    --color-accent-foreground: 255 255 255;
+    --color-destructive: 239 68 68;
+    --color-destructive-foreground: 255 255 255;
+    --color-ring: 59 130 246;
+
+    --color-status-approved: 16 185 129;
+    --color-status-review: 245 158 11;
+    --color-status-new: 59 130 246;
+    --color-status-blocked: 239 68 68;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    /* DARK MODE */
+    --color-background: 15 23 42;
+    --color-background-soft: 30 41 59;
+    --color-background-card: 31 41 55;
+    --color-background-hover: 55 65 81;
+
+    --color-surface: 17 24 39;
+    --color-surface-primary: 17 24 39;
+    --color-surface-secondary: 31 41 55;
+    --color-surface-tertiary: 55 65 81;
+
+    --color-border: 55 65 81;
+    --color-border-soft: 75 85 99;
+
+    --color-foreground: 241 245 249;
+    --color-muted-foreground: 148 163 184;
+
+    --color-white: 255 255 255;
+    --color-gray-100: 241 245 249;
+    --color-gray-200: 226 232 240;
+    --color-gray-300: 203 213 225;
+    --color-gray-400: 156 163 175;
+    --color-gray-500: 107 114 128;
+    --color-gray-600: 75 85 99;
+    --color-gray-700: 55 65 81;
+    --color-gray-800: 31 41 55;
+    --color-gray-900: 17 24 39;
+
+    --color-accent: 99 102 241;
+    --color-accent-foreground: 255 255 255;
+    --color-destructive: 239 68 68;
+    --color-destructive-foreground: 255 255 255;
+    --color-ring: 59 130 246;
+
+    --color-status-approved: 16 185 129;
+    --color-status-review: 245 158 11;
+    --color-status-new: 59 130 246;
+    --color-status-blocked: 239 68 68;
+
+    color-scheme: dark;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-background min-h-screen antialiased;
+    color: rgb(var(--color-foreground));
+  }
+
+  * {
+    @apply border-border;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-surface-secondary hover:bg-surface-tertiary text-slate-800 dark:text-slate-100 font-medium rounded-lg border border-border transition-colors;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 hover:bg-surface-secondary text-slate-600 dark:text-slate-300 rounded-md transition-colors;
+  }
+
+  .btn-icon {
+    @apply inline-flex items-center justify-center h-9 w-9 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-surface-secondary hover:text-slate-900 dark:hover:text-white transition-colors shrink-0;
+  }
+
+  .input-base {
+    @apply w-full px-3 py-2 bg-surface-secondary border border-border rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition;
+  }
+
+  .card {
+    @apply bg-background-card border border-border rounded-xl shadow-sm;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-surface-tertiary hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors;
+  }
+
+  .sidebar-item-active {
+    @apply bg-brand-600/15 text-brand-700 dark:text-brand-300 hover:bg-brand-600/25;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--color-border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--color-border));
+    border-radius: 3px;
+  }
+
+  .dark .scrollbar-thin {
+    scrollbar-color: rgb(var(--color-gray-700)) transparent;
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--color-gray-700));
+  }
+}

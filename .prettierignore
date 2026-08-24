@@ -1,0 +1,8 @@
+dist
+node_modules
+build
+storage
+coverage
+*.min.js
+*.min.css
+package-lock.json
