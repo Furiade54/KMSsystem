@@ -62,6 +62,15 @@ import {
   type ProjectMember,
 } from '../services/projects.service'
 import {
+  type FavoriteState,
+  addFavorite,
+  removeFavorite,
+  toggleFavorite,
+  listFavorites,
+  type FavoriteResourceType,
+  type FavoriteItem,
+} from '../services/favorites.service'
+import {
   ApiFolder,
   buildFolderTree,
   copyFolder,
@@ -506,6 +515,42 @@ function ProjectDetailPage() {
       alert(err?.response?.data?.message || err?.message || 'No se pudo actualizar el rol')
     },
   })
+  void updateRoleMutation
+
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: (payload: { resourceType: FavoriteResourceType; resourceId: string }) =>
+      toggleFavorite(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
+      queryClient.invalidateQueries({ queryKey: ['favorite', 'check'] })
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.message || err?.message || 'No se pudo actualizar el favorito')
+    },
+  })
+
+  const [favoriteLocals, setFavoriteLocals] = useState<Map<string, boolean>>(() => new Map<string, boolean>())
+
+  function handleToggleFavorite(
+    resourceType: FavoriteResourceType,
+    resourceId: string,
+    currentLocal?: boolean | undefined
+  ) {
+    const key = `${resourceType}:${resourceId}`
+    const prev = currentLocal ?? favoriteLocals.get(key) ?? false
+    setFavoriteLocals((draft) => {
+      const d = new Map(draft)
+      d.set(key, !prev)
+      return d
+    })
+    toggleFavoriteMutation.mutate({ resourceType, resourceId }, {})
+  }
+
+  function isLocalFavorite(resourceType: FavoriteResourceType, resourceId: string) {
+    const key = `${resourceType}:${resourceId}`
+    const v = favoriteLocals?.get(key)
+    return typeof v === 'boolean' ? v : undefined
+  }
 
   const [newFolderName, setNewFolderName] = useState('')
   const [newFolderError, setNewFolderError] = useState('')
@@ -915,6 +960,35 @@ function ProjectDetailPage() {
 
           <div className="flex items-center gap-1.5 ml-auto shrink-0 self-center">
             <button
+              aria-label={
+                project && isLocalFavorite('PROJECT', project.id)
+                  ? 'Quitar proyecto de favoritos'
+                  : 'Marcar proyecto como favorito'
+              }
+              title={
+                project && isLocalFavorite('PROJECT', project.id)
+                  ? 'Quitar de favoritos'
+                  : 'Añadir a favoritos'
+              }
+              disabled={!project}
+              onClick={() => project && handleToggleFavorite('PROJECT', project.id)}
+              className={clsx(
+                'btn-secondary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60',
+                project && isLocalFavorite('PROJECT', project.id) &&
+                  'text-status-review ring-1 ring-status-review/25 bg-status-review/8'
+              )}
+            >
+              <Star
+                className={clsx(
+                  'w-3.5 h-3.5',
+                  project && isLocalFavorite('PROJECT', project.id) && 'fill-current'
+                )}
+              />
+              <span className="hidden sm:inline">
+                {project && isLocalFavorite('PROJECT', project.id) ? 'Favorito' : 'Favoritos'}
+              </span>
+            </button>
+            <button
               className="btn-secondary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
               aria-label="Invitar miembros al proyecto"
               title="Invitar miembros"
@@ -989,6 +1063,29 @@ function ProjectDetailPage() {
                     >
                       <Edit3 className="w-3.5 h-3.5 text-muted-foreground" />
                       Editar proyecto
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setHeaderMenuOpen(false)
+                        project && handleToggleFavorite('PROJECT', project.id)
+                      }}
+                      className={clsx(
+                        'w-full flex items-center gap-2 px-2 py-1 rounded-md h-8 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus:outline-none',
+                        project && isLocalFavorite('PROJECT', project.id)
+                          ? 'bg-status-review/8 text-status-review hover:bg-status-review/15'
+                          : 'hover:bg-surface-secondary text-foreground'
+                      )}
+                    >
+                      <Star
+                        className={clsx(
+                          'w-3.5 h-3.5',
+                          project && isLocalFavorite('PROJECT', project.id) && 'fill-current'
+                        )}
+                      />
+                      {project && isLocalFavorite('PROJECT', project.id)
+                        ? 'Quitar de favoritos'
+                        : 'Añadir a favoritos'}
                     </button>
                     <button
                       role="menuitem"
@@ -1413,12 +1510,25 @@ function ProjectDetailPage() {
                           >
                             <td className="py-0.5 pr-2 pl-1.5 w-[32px] align-middle text-center">
                               <button
-                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted-foreground hover:text-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded h-6 w-6 inline-flex items-center justify-center"
-                                onClick={(e) => e.stopPropagation()}
+                                className={clsx(
+                                  'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded h-6 w-6 inline-flex items-center justify-center',
+                                  isLocalFavorite('FOLDER', f.id) ?? false
+                                    ? 'text-amber-500 opacity-100'
+                                    : 'text-muted-foreground'
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggleFavorite('FOLDER', f.id)
+                                }}
                                 aria-label="Marcar carpeta como favorita"
                                 tabIndex={0}
                               >
-                                <Star className="w-3.5 h-3.5" />
+                                <Star
+                                  className={clsx(
+                                    'w-3.5 h-3.5',
+                                    (isLocalFavorite('FOLDER', f.id) ?? false) && 'fill-current'
+                                  )}
+                                />
                               </button>
                             </td>
                             <td className="py-0.5 px-2 align-middle">
@@ -1517,12 +1627,25 @@ function ProjectDetailPage() {
                           >
                             <td className="py-0.5 pr-2 pl-1.5 w-[32px] align-middle text-center">
                               <button
-                                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted-foreground hover:text-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded h-6 w-6 inline-flex items-center justify-center"
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label="Marcar archivo como favorito"
+                                className={clsx(
+                                  'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:text-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded h-6 w-6 inline-flex items-center justify-center',
+                                  isLocalFavorite('FILE', file.id) ?? false
+                                    ? 'text-amber-500 opacity-100'
+                                    : 'text-muted-foreground'
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggleFavorite('FILE', file.id)
+                                }}
+                                aria-label="Marcar archivo como favorita"
                                 tabIndex={0}
                               >
-                                <Star className="w-3.5 h-3.5" />
+                                <Star
+                                  className={clsx(
+                                    'w-3.5 h-3.5',
+                                    (isLocalFavorite('FILE', file.id) ?? false) && 'fill-current'
+                                  )}
+                                />
                               </button>
                             </td>
                             <td className="py-0.5 px-2 align-middle">
@@ -2476,11 +2599,20 @@ function ProjectDetailPage() {
               Copiar / Mover
             </button>
             <button
-              onClick={() => setFolderContextMenu(null)}
+              onClick={() => {
+                const f = folderContextMenu.folder
+                setFolderContextMenu(null)
+                handleToggleFavorite('FOLDER', f.id)
+              }}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
             >
-              <Star className="w-4 h-4" />
-              Añadir a favoritos
+              <Star
+                className={clsx(
+                  'w-4 h-4',
+                  (isLocalFavorite('FOLDER', folderContextMenu.folder.id) ?? false) && 'fill-current text-amber-500'
+                )}
+              />
+              {(isLocalFavorite('FOLDER', folderContextMenu.folder.id) ?? false) ? 'Quitar de favoritos' : 'Añadir a favoritos'}
             </button>
             <div className="my-1 border-t border-border/60" />
             <button
@@ -2585,11 +2717,20 @@ function ProjectDetailPage() {
               Comentar
             </button>
             <button
-              onClick={() => setFileContextMenu(null)}
+              onClick={() => {
+                const f = fileContextMenu.file
+                setFileContextMenu(null)
+                handleToggleFavorite('FILE', f.id)
+              }}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
             >
-              <Star className="w-4 h-4" />
-              Añadir a favoritos
+              <Star
+                className={clsx(
+                  'w-4 h-4',
+                  (isLocalFavorite('FILE', fileContextMenu.file.id) ?? false) && 'fill-current text-amber-500'
+                )}
+              />
+              {(isLocalFavorite('FILE', fileContextMenu.file.id) ?? false) ? 'Quitar de favoritos' : 'Añadir a favoritos'}
             </button>
             <div className="my-1 border-t border-border/60" />
             <button

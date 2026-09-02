@@ -12,6 +12,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Star,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -26,6 +27,11 @@ import {
   projectGradientClass,
   statusBadgeInfo,
 } from '../services/projects.service'
+import {
+  toggleFavorite,
+  type FavoriteResourceType,
+  checkFavorite,
+} from '../services/favorites.service'
 
 type ViewMode = 'grid' | 'list'
 
@@ -121,6 +127,73 @@ function ProjectsPage() {
       setFormErrors((prev) => ({ ...prev, _global: msg }))
     },
   })
+
+  const [projectFavLocals, setProjectFavLocals] = useState<Record<string, boolean>>({})
+  const toggleFavoriteProjectMutation = useMutation({
+    mutationFn: (payload: { id: string }) =>
+      toggleFavorite({ resourceType: 'PROJECT' as FavoriteResourceType, resourceId: payload.id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.message || err?.message || 'No se pudo actualizar el favorito')
+    },
+  })
+
+  function handleToggleProjectFavorite(id: string, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setProjectFavLocals((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }))
+    toggleFavoriteProjectMutation.mutate({ id })
+  }
+
+  function ProjectFavoriteStar({ id }: { id: string }) {
+    const favorited = projectFavLocals[id]
+    const pending =
+      toggleFavoriteProjectMutation.isPending &&
+      (toggleFavoriteProjectMutation.variables as { id: string } | undefined)?.id === id
+    return (
+      <button
+        onClick={(e) => handleToggleProjectFavorite(id, e)}
+        aria-label="Marcar proyecto como favorito"
+        className={clsx(
+          'w-8 h-8 rounded-full bg-black/20 backdrop-blur flex items-center justify-center transition-colors',
+          favorited ? 'text-status-review' : 'text-white/90 hover:text-white hover:bg-black/30',
+          pending && 'opacity-60 pointer-events-none'
+        )}
+      >
+        {pending ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Star className={clsx('w-4 h-4', favorited && 'fill-current')} />
+        )}
+      </button>
+    )
+  }
+
+  function ProjectFavoriteStarInline({ id }: { id: string }) {
+    const favorited = projectFavLocals[id]
+    const pending =
+      toggleFavoriteProjectMutation.isPending &&
+      (toggleFavoriteProjectMutation.variables as { id: string } | undefined)?.id === id
+    return (
+      <button
+        onClick={(e) => handleToggleProjectFavorite(id, e)}
+        aria-label="Marcar proyecto como favorito"
+        className={clsx(
+          'w-8 h-8 rounded-md flex items-center justify-center transition-colors shrink-0',
+          favorited ? 'text-status-review bg-status-review/10' : 'text-muted-foreground hover:text-foreground hover:bg-surface-secondary',
+          pending && 'opacity-60 pointer-events-none'
+        )}
+      >
+        {pending ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Star className={clsx('w-4 h-4', favorited && 'fill-current')} />
+        )}
+      </button>
+    )
+  }
 
   const items = query.data?.items ?? []
   const total = query.data?.total ?? 0
@@ -319,9 +392,17 @@ function ProjectsPage() {
           </div>
         </div>
       ) : viewMode === 'grid' ? (
-        <ProjectGrid projects={items} />
+        <ProjectGrid
+          projects={items}
+          renderStar={(id) => <ProjectFavoriteStar id={id} />}
+        />
       ) : (
-        <ProjectList projects={items} />
+        <ProjectList
+          projects={items}
+          renderStar={(id) => (
+            <ProjectFavoriteStarInline id={id} />
+          )}
+        />
       )}
 
       {!isLoading && totalPages > 1 && (
@@ -504,7 +585,13 @@ function ProjectsPage() {
   )
 }
 
-function ProjectGrid({ projects }: { projects: ApiProject[] }) {
+function ProjectGrid({
+  projects,
+  renderStar,
+}: {
+  projects: ApiProject[]
+  renderStar: (id: string) => React.ReactNode
+}) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {projects.map((p) => {
@@ -524,9 +611,12 @@ function ProjectGrid({ projects }: { projects: ApiProject[] }) {
               <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
                 <FolderKanban className="w-6 h-6 text-white" />
               </div>
-              <span className="text-[10px] px-2 py-1 rounded-full bg-black/30 text-white">
-                {badge.label}
-              </span>
+              <div className="flex items-start gap-1.5">
+                <span className="text-[10px] px-2 py-1 rounded-full bg-black/30 text-white">
+                  {badge.label}
+                </span>
+                {renderStar(p.id)}
+              </div>
             </div>
             <div className="p-4 space-y-3">
               <h3 className="font-semibold text-foreground group-hover:text-brand-600 dark:group-hover:text-brand-300 transition-colors truncate">
@@ -548,7 +638,13 @@ function ProjectGrid({ projects }: { projects: ApiProject[] }) {
   )
 }
 
-function ProjectList({ projects }: { projects: ApiProject[] }) {
+function ProjectList({
+  projects,
+  renderStar,
+}: {
+  projects: ApiProject[]
+  renderStar: (id: string) => React.ReactNode
+}) {
   return (
     <div className="card divide-y divide-border">
       {projects.map((p) => {
@@ -596,6 +692,7 @@ function ProjectList({ projects }: { projects: ApiProject[] }) {
                 {formatRelativeTime(p.updatedAt ?? p.createdAt)}
               </span>
             </div>
+            {renderStar(p.id)}
           </Link>
         )
       })}

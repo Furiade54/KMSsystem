@@ -13,6 +13,7 @@ import foldersRouter from './modules/folders/folders.routes'
 import searchRouter from './modules/search/search.routes'
 import activityRouter from './modules/activity/activity.routes'
 import requestsRouter from './modules/requests/requests.routes'
+import favoritesRouter from './modules/favorites/favorites.routes'
 
 const app = express()
 
@@ -58,6 +59,7 @@ app.use('/api/carpetas', foldersRouter)
 app.use('/api/buscar', searchRouter)
 app.use('/api/actividad', activityRouter)
 app.use('/api/solicitudes', requestsRouter)
+app.use('/api/favorites', favoritesRouter)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

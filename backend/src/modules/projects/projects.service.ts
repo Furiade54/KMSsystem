@@ -135,6 +135,14 @@ export async function permanentlyDeleteProject(
               SELECT 1 FROM Archivos a WHERE a.Id = au.IdRecurso AND a.IdProyecto = @projectId
             ));
 
+      DELETE fv
+      FROM Favoritos fv
+      WHERE fv.IdOrganizacion = @orgId AND (
+          (fv.TipoRecurso = 'PROJECT' AND fv.IdRecurso = @projectId)
+          OR (fv.TipoRecurso = 'FOLDER' AND EXISTS (SELECT 1 FROM Carpetas c WHERE c.Id = fv.IdRecurso AND c.IdProyecto = @projectId))
+          OR (fv.TipoRecurso = 'FILE' AND EXISTS (SELECT 1 FROM Archivos a WHERE a.Id = fv.IdRecurso AND a.IdProyecto = @projectId))
+      );
+
       /*
         Archivos no tiene ON DELETE CASCADE hacia Proyectos y, ademas, VersionesArchivo
         cuelga de Archivos con CASCADE. Basta borrar Archivos para que SQL Server
