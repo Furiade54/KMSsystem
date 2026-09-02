@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tansta
 import clsx from 'clsx'
 import {
   ApiProject,
+  permanentlyDeleteProject,
   fetchProjects,
   formatRelativeTime,
   projectColorClass,
@@ -28,6 +29,8 @@ function TrashPage() {
   const [searchInput, setSearchInput] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
   const [confirmRestoreProject, setConfirmRestoreProject] = useState<ApiProject | null>(null)
+  const [confirmPermanentDeleteProject, setConfirmPermanentDeleteProject] =
+    useState<ApiProject | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 400)
@@ -60,11 +63,36 @@ function TrashPage() {
     },
   })
 
+  const permanentDeleteMutation = useMutation({
+    mutationFn: (project: ApiProject) => permanentlyDeleteProject(project.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setConfirmPermanentDeleteProject(null)
+      if (items.length === 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1))
+      }
+    },
+    onError: (err: any) => {
+      alert(err?.message || 'No se pudo eliminar permanentemente el proyecto')
+    },
+  })
+
   const items = query.data?.items ?? []
   const total = query.data?.total ?? 0
   const totalPages = query.data?.totalPages ?? 1
   const isLoading = query.isLoading && query.fetchStatus !== 'idle'
   const isEmpty = !isLoading && items.length === 0
+
+  useEffect(() => {
+    if (!query.data) return
+    if (query.data.total === 0 && page !== 1) {
+      setPage(1)
+      return
+    }
+    if (query.data.totalPages > 0 && page > query.data.totalPages) {
+      setPage(query.data.totalPages)
+    }
+  }, [page, query.data])
 
   const headerTotal = useMemo(() => {
     if (isLoading) return '…'
@@ -93,7 +121,8 @@ function TrashPage() {
           <p className="font-medium text-foreground">Proyectos en la papelera</p>
           <p>
             Los proyectos enviados a la papelera pueden <strong>restaurarse</strong> para volver
-            a estar activos. El borrado permanente físico estará disponible próximamente.
+            a estar activos. También puedes eliminarlos de forma <strong>permanente</strong>,
+            pero esa acción no se puede deshacer.
           </p>
         </div>
       </div>
@@ -157,6 +186,9 @@ function TrashPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((p) => {
             const isRestoring = restoreMutation.isPending && restoreMutation.variables?.id === p.id
+            const isDeletingPermanently =
+              permanentDeleteMutation.isPending &&
+              permanentDeleteMutation.variables?.id === p.id
             return (
               <div
                 key={p.id}
@@ -206,12 +238,26 @@ function TrashPage() {
                       )}
                     </button>
                     <button
-                      className="btn-secondary text-sm py-2 opacity-50 cursor-not-allowed"
-                      disabled
-                      title="Borrado permanente disponible próximamente"
+                      className={clsx(
+                        'btn-secondary text-sm py-2',
+                        isDeletingPermanently &&
+                          'opacity-70 cursor-wait border-status-blocked/40 text-status-blocked'
+                      )}
+                      disabled={isDeletingPermanently}
+                      onClick={() => setConfirmPermanentDeleteProject(p)}
+                      title="Eliminar permanentemente"
                     >
-                      <Trash2 className="w-4 h-4" />
-                      Eliminar
+                      {isDeletingPermanently ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Eliminando…
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Eliminar
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -294,6 +340,62 @@ function TrashPage() {
                   <>
                     <RotateCcw className="w-4 h-4" />
                     Sí, restaurar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmPermanentDeleteProject && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setConfirmPermanentDeleteProject(null)}
+        >
+          <div className="card w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-xl bg-status-blocked/15 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-status-blocked" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Eliminar permanentemente
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    ¿Eliminar de forma permanente el proyecto{' '}
+                    <strong className="text-foreground">
+                      {confirmPermanentDeleteProject.name}
+                    </strong>
+                    ? Esta acción no se puede deshacer y borrará sus datos relacionados.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
+              <button
+                className="btn-secondary text-sm"
+                onClick={() => setConfirmPermanentDeleteProject(null)}
+                disabled={permanentDeleteMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn-primary text-sm bg-status-blocked hover:bg-status-blocked/90 focus-visible:ring-status-blocked/40"
+                onClick={() => permanentDeleteMutation.mutate(confirmPermanentDeleteProject)}
+                disabled={permanentDeleteMutation.isPending}
+              >
+                {permanentDeleteMutation.isPending &&
+                permanentDeleteMutation.variables?.id === confirmPermanentDeleteProject.id ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Eliminando…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Sí, eliminar
                   </>
                 )}
               </button>

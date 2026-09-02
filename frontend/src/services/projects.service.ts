@@ -141,6 +141,34 @@ export async function getProjectMembers(projectId: string) {
   return res.data.data
 }
 
+export async function addProjectMember(projectId: string, userId: string, roleName?: string) {
+  const res = await api.post<ApiResponse<ProjectMember>>(`/projects/${projectId}/miembros`, {
+    userId,
+    roleName: roleName || 'Miembro',
+  })
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo agregar el miembro')
+  }
+  return res.data.data
+}
+
+export async function removeProjectMember(projectId: string, memberId: string) {
+  const res = await api.delete(`/projects/${projectId}/miembros/${memberId}`)
+  if (res.status !== 204) {
+    throw new Error('No se pudo retirar el miembro')
+  }
+}
+
+export async function updateProjectMemberRole(projectId: string, memberId: string, roleName: string | null) {
+  const res = await api.patch<ApiResponse<ProjectMember>>(`/projects/${projectId}/miembros/${memberId}`, {
+    roleName,
+  })
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo actualizar el rol')
+  }
+  return res.data.data
+}
+
 export interface UpdateProjectPayload {
   name?: string
   description?: string
@@ -159,6 +187,21 @@ export async function deleteProject(id: string) {
   const res = await api.delete(`/projects/${id}`)
   if (res.status !== 204) {
     throw new Error('No se pudo eliminar el proyecto')
+  }
+}
+
+export async function permanentlyDeleteProject(id: string) {
+  try {
+    const res = await api.delete(`/projects/${id}/permanent`)
+    if (res.status !== 204) {
+      throw new Error('No se pudo eliminar permanentemente el proyecto')
+    }
+  } catch (err: any) {
+    throw new Error(
+      err?.response?.data?.message ||
+        err?.message ||
+        'No se pudo eliminar permanentemente el proyecto'
+    )
   }
 }
 

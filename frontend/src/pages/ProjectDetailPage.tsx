@@ -36,11 +36,14 @@ import {
   MessageCircle,
   Send,
   ShieldAlert,
+  UserPlus,
+  UserMinus,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useUIStore } from '@/store/uiStore'
 import type { SelectedResourceType } from '@/store/uiStore'
+import { useAuthStore } from '@/store/authStore'
 import {
   ApiProjectStatus,
   deleteProject,
@@ -51,6 +54,12 @@ import {
   projectGradientClass,
   statusBadgeInfo,
   updateProject,
+  addProjectMember,
+  removeProjectMember,
+  updateProjectMemberRole,
+  fetchOrganizationMembers,
+  type OrgMember,
+  type ProjectMember,
 } from '../services/projects.service'
 import {
   ApiFolder,
@@ -152,6 +161,7 @@ function ProjectDetailPage() {
   const navigate = useNavigate()
   const [sp] = useSearchParams()
   const queryClient = useQueryClient()
+  const { user: authUser } = useAuthStore()
   const { setSelectedResource, selectedResource, rightPanelOpen, toggleRightPanel } = useUIStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const renameFileInputRef = useRef<HTMLInputElement>(null)
@@ -418,6 +428,82 @@ function ProjectDetailPage() {
       } else {
         alert(err?.response?.data?.message || err?.message || 'No se pudo eliminar el proyecto')
       }
+    },
+  })
+
+  const canManageMembers = useMemo(() => {
+    if (!project?.ownerId) return false
+    if (!authUser?.id) return false
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const [showInviteMember, setShowInviteMember] = useState(false)
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [inviteRole, setInviteRole] = useState('Miembro')
+  const [inviteSelectedUserId, setInviteSelectedUserId] = useState<string | null>(null)
+  const [inviteError, setInviteError] = useState('')
+
+  const orgMembersQuery = useQuery({
+    queryKey: ['org', 'members', inviteSearch.trim()],
+    queryFn: () => fetchOrganizationMembers({ search: inviteSearch.trim() || undefined, pageSize: 50 }),
+    enabled: showInviteMember,
+    staleTime: 30_000,
+  })
+
+  const candidateOrgMembers = useMemo<OrgMember[]>(() => {
+    const already = new Set((membersQuery.data?.items ?? []).map((m) => String(m.userId).toLowerCase()))
+    return (orgMembersQuery.data?.items ?? []).filter(
+      (o) => !already.has(String(o.id).toLowerCase())
+    )
+  }, [orgMembersQuery.data, membersQuery.data])
+
+  const addMemberMutation = useMutation({
+    mutationFn: (payload: { userId: string; roleName?: string }) =>
+      addProjectMember(projectId, payload.userId, payload.roleName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
+      setShowInviteMember(false)
+      setInviteSelectedUserId(null)
+      setInviteSearch('')
+      setInviteError('')
+    },
+    onError: (err: unknown) => {
+      setInviteError(err instanceof Error ? err.message : 'Error desconocido')
+    },
+  })
+
+  const handleAddMemberSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!inviteSelectedUserId) {
+      setInviteError('Selecciona un usuario de la organización')
+      return
+    }
+    setInviteError('')
+    addMemberMutation.mutate({ userId: inviteSelectedUserId, roleName: inviteRole.trim() || undefined })
+  }
+
+  const removeMemberMutation = useMutation({
+    mutationFn: (memberId: string) => removeProjectMember(projectId, memberId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.message || err?.message || 'No se pudo retirar el miembro')
+    },
+  })
+
+  const [confirmRemoveMember, setConfirmRemoveMember] = useState<ProjectMember | null>(null)
+
+  const updateRoleMutation = useMutation({
+    mutationFn: (payload: { memberId: string; roleName: string | null }) =>
+      updateProjectMemberRole(projectId, payload.memberId, payload.roleName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
+    },
+    onError: (err: any) => {
+      alert(err?.response?.data?.message || err?.message || 'No se pudo actualizar el rol')
     },
   })
 
@@ -832,9 +918,15 @@ function ProjectDetailPage() {
               className="btn-secondary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
               aria-label="Invitar miembros al proyecto"
               title="Invitar miembros"
-              disabled
+              disabled={!project || !canManageMembers}
+              onClick={() => {
+                setShowInviteMember(true)
+                setInviteSelectedUserId(null)
+                setInviteSearch('')
+                setInviteError('')
+              }}
             >
-              <Users className="w-3.5 h-3.5" />
+              <UserPlus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Invitar</span>
             </button>
             <button
@@ -1500,7 +1592,23 @@ function ProjectDetailPage() {
       {activeTab === 'team' && (
         <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
           <div className="max-w-3xl mx-auto space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">Equipo del proyecto</h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-foreground">Equipo del proyecto</h2>
+              {canManageMembers && (
+                <button
+                  className="btn-secondary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                  onClick={() => {
+                    setShowInviteMember(true)
+                    setInviteSelectedUserId(null)
+                    setInviteSearch('')
+                    setInviteError('')
+                  }}
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline ml-1.5">Agregar miembro</span>
+                </button>
+              )}
+            </div>
             <div className="card divide-y divide-border overflow-hidden">
               {membersQuery.isLoading && membersQuery.fetchStatus !== 'idle' ? (
                 Array.from({ length: 4 }).map((_, i) => (
@@ -1518,24 +1626,47 @@ function ProjectDetailPage() {
                   Aún no hay miembros.
                 </div>
               ) : (
-                membersQuery.data.items.map((m) => (
-                  <div key={m.id} className="p-4 flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-brand-500/20 text-brand-300 dark:text-brand-200 flex items-center justify-center font-semibold shrink-0">
-                      {initials(m.fullName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-foreground truncate">
-                        {m.fullName || 'Usuario sin nombre'}
+                membersQuery.data.items.map((m) => {
+                  const isOwner = project && m.userId === project.ownerId
+                  const canRemove = canManageMembers && !isOwner
+                  return (
+                    <div key={m.id} className="p-4 flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-brand-500/20 text-brand-300 dark:text-brand-200 flex items-center justify-center font-semibold shrink-0">
+                        {m.avatarUrl ? (
+                          <img src={m.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+                        ) : (
+                          initials(m.fullName)
+                        )}
                       </div>
-                      <div className="text-xs text-gray-400 truncate">
-                        {m.email || m.roleName || 'Sin correo'}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-foreground truncate">
+                          {m.fullName || 'Usuario sin nombre'}
+                        </div>
+                        <div className="text-xs text-gray-400 truncate">
+                          {m.email || 'Sin correo'}
+                        </div>
                       </div>
+                      <div className="text-xs px-2 py-1 rounded-full bg-surface-secondary text-gray-300 shrink-0">
+                        {m.roleName || (isOwner ? 'Propietario' : 'Miembro')}
+                      </div>
+                      {canRemove && (
+                        <button
+                          className="btn-ghost p-1 rounded-md h-8 w-8 shrink-0 text-muted-foreground hover:text-status-blocked hover:bg-status-blocked/10 focus-visible:ring-2 focus-visible:ring-status-blocked/50 focus:outline-none"
+                          title="Retirar del proyecto"
+                          aria-label={`Retirar ${m.fullName || m.email || 'miembro'} del proyecto`}
+                          onClick={() => setConfirmRemoveMember(m)}
+                          disabled={removeMemberMutation.isPending}
+                        >
+                          {removeMemberMutation.isPending && confirmRemoveMember?.id === m.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <UserMinus className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
                     </div>
-                    <div className="text-xs px-2 py-1 rounded-full bg-surface-secondary text-gray-300 shrink-0">
-                      {m.roleName || (m.userId === project?.ownerId ? 'Propietario' : 'Miembro')}
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>
@@ -2728,6 +2859,247 @@ function ProjectDetailPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {confirmRemoveMember && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setConfirmRemoveMember(null)}
+        >
+          <div className="card w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-xl bg-status-blocked/15 flex items-center justify-center shrink-0">
+                  <UserMinus className="w-5 h-5 text-status-blocked" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-semibold text-foreground">Retirar miembro</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    ¿Retirar a{' '}
+                    <strong className="text-foreground">
+                      {confirmRemoveMember.fullName || confirmRemoveMember.email || 'este usuario'}
+                    </strong>{' '}
+                    del proyecto? Perderá acceso inmediatamente.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
+              <button
+                className="btn-secondary text-sm"
+                onClick={() => setConfirmRemoveMember(null)}
+                disabled={removeMemberMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn-primary text-sm"
+                onClick={() => {
+                  if (!confirmRemoveMember) return
+                  removeMemberMutation.mutate(confirmRemoveMember.id, {
+                    onSettled: () => setConfirmRemoveMember(null),
+                  })
+                }}
+                disabled={removeMemberMutation.isPending}
+              >
+                {removeMemberMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Retirando…
+                  </>
+                ) : (
+                  <>
+                    <UserMinus className="w-4 h-4" />
+                    Sí, retirar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInviteMember && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (addMemberMutation.isPending) return
+            setShowInviteMember(false)
+          }}
+        >
+          <form
+            onSubmit={handleAddMemberSubmit}
+            className="card w-full max-w-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-brand-500" />
+                  Agregar miembro al proyecto
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Selecciona un usuario de la organización.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={addMemberMutation.isPending}
+                onClick={() => setShowInviteMember(false)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-surface-secondary"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              {(() => {
+                const msg: string | null = inviteError
+                  ? inviteError
+                  : addMemberMutation.error instanceof Error
+                    ? addMemberMutation.error.message
+                    : addMemberMutation.error
+                      ? 'Error desconocido'
+                      : null
+                if (!msg) return null
+                return (
+                  <div className="text-xs rounded-md p-2.5 bg-status-blocked/15 border border-status-blocked/40 text-destructive/90">
+                    {msg}
+                  </div>
+                )
+              })()}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">
+                  Buscar usuario
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={inviteSearch}
+                    onChange={(e) => {
+                      setInviteSearch(e.target.value)
+                      setInviteSelectedUserId(null)
+                    }}
+                    placeholder="Nombre o correo del usuario..."
+                    className="input-base w-full pl-8 pr-2.5 text-[12px] h-9 rounded-md border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">
+                  Rol en el proyecto
+                </label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="input-base w-full text-[12px] h-9 rounded-md border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 bg-surface"
+                >
+                  <option value="Miembro">Miembro</option>
+                  <option value="Colaborador">Colaborador</option>
+                  <option value="Editor">Editor</option>
+                  <option value="Administrador">Administrador</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">
+                  Usuarios disponibles
+                </label>
+                <div className="max-h-[260px] overflow-y-auto scrollbar-thin card divide-y divide-border overflow-hidden">
+                  {orgMembersQuery.isLoading && orgMembersQuery.fetchStatus !== 'idle' ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="p-3 flex items-center gap-3 animate-pulse">
+                        <div className="w-8 h-8 rounded-full bg-surface-secondary" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-3 w-40 bg-surface-secondary rounded" />
+                          <div className="h-2.5 w-56 bg-surface-secondary rounded" />
+                        </div>
+                      </div>
+                    ))
+                  ) : candidateOrgMembers.length === 0 ? (
+                    <div className="p-6 text-center text-muted-foreground text-xs">
+                      {inviteSearch.trim()
+                        ? 'No se encontraron usuarios con esos términos.'
+                        : 'Todos los miembros de la organización ya están en este proyecto.'}
+                    </div>
+                  ) : (
+                    candidateOrgMembers.map((u) => {
+                      const selected = inviteSelectedUserId === u.id
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => setInviteSelectedUserId(u.id)}
+                          className={clsx(
+                            'w-full p-3 flex items-center gap-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500/60',
+                            selected
+                              ? 'bg-brand-500/12 ring-1 ring-inset ring-brand-500/30'
+                              : 'hover:bg-surface-secondary'
+                          )}
+                        >
+                          <div className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-300 flex items-center justify-center text-xs font-semibold shrink-0">
+                            {initials(u.fullName)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[12px] font-medium text-foreground truncate">
+                              {u.fullName || 'Usuario sin nombre'}
+                            </div>
+                            <div className="text-[10.5px] text-gray-400 truncate">
+                              {u.email || 'Sin correo'}
+                            </div>
+                          </div>
+                          <div
+                            className={clsx(
+                              'w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors',
+                              selected
+                                ? 'bg-brand-500 border-brand-500 text-white'
+                                : 'border-muted-foreground/30'
+                            )}
+                          >
+                            {selected && <Check className="w-3 h-3" />}
+                          </div>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                disabled={addMemberMutation.isPending}
+                onClick={() => {
+                  setShowInviteMember(false)
+                  setInviteSelectedUserId(null)
+                  setInviteSearch('')
+                  setInviteError('')
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="btn-primary text-sm"
+                disabled={!inviteSelectedUserId || addMemberMutation.isPending}
+              >
+                {addMemberMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Agregando…
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    Agregar miembro
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

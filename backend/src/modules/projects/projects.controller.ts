@@ -3,6 +3,7 @@ import type { ApiResponse, Project, PaginatedResult } from '../../../../packages
 import { getDbPool, sql } from '../../shared/db/pool'
 import { AppError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
 import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
+import { permanentlyDeleteProject } from './projects.service'
 
 type ProjectRow = {
   Id: string
@@ -258,14 +259,12 @@ export async function getProjectMembers(
 
     const items = rows.map((m) => ({
       id: String(m.Id),
-      role: m.NombreRol ?? 'Miembro',
+      userId: String(m.IdUsuario),
+      roleName: m.NombreRol ?? null,
       joinedAt: m.FechaIngreso ? new Date(m.FechaIngreso).toISOString() : null,
-      user: {
-        id: String(m.IdUsuario),
-        fullName: m.NombreCompleto ?? '',
-        email: m.Correo ?? '',
-        avatarUrl: m.UrlAvatar ?? null,
-      },
+      fullName: m.NombreCompleto ?? null,
+      email: m.Correo ?? null,
+      avatarUrl: m.UrlAvatar ?? null,
     }))
     res.status(200).json({ success: true, data: { items, total } })
   } catch (err) {
@@ -442,6 +441,180 @@ export async function deleteProject(
       .input('orgId', sql.UniqueIdentifier, auth.organizationId)
       .query(`UPDATE Proyectos SET Estado='ELIMINADO', FechaActualizacion=GETDATE() WHERE Id=@pid AND IdOrganizacion=@orgId;`)
     res.status(204).end()
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function permanentlyDeleteProjectEndpoint(
+  req: Request,
+  res: Response<ApiResponse<void>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const id = String(req.params.id)
+    await permanentlyDeleteProject(auth, id, req)
+    res.status(204).end()
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function assertCanManageProjectMembers(
+  auth: { organizationId: string; userId: string },
+  projectId: string
+): Promise<{ IdProyecto: string; IdPropietario: string | null }> {
+  const pool = await getDbPool()
+  const qry = pool.request()
+  qry.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+  qry.input('userId', sql.UniqueIdentifier, auth.userId)
+  qry.input('projectId', sql.UniqueIdentifier, projectId)
+  const r = await qry.query<{ Id: string; IdPropietario: string | null }>(`
+    SELECT Id, IdPropietario FROM Proyectos p
+    WHERE p.Id = @projectId AND p.IdOrganizacion = @orgId AND p.Estado <> 'ELIMINADO'
+      AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id AND mp.IdUsuario=@userId));
+  `)
+  const row = r.recordset[0]
+  if (!row) throw new NotFoundError('Proyecto no encontrado')
+  const isOwner = row.IdPropietario && String(row.IdPropietario).toLowerCase() === String(auth.userId).toLowerCase()
+  if (!isOwner) throw new ForbiddenError('Solo el propietario del proyecto puede gestionar sus miembros')
+  return { IdProyecto: String(row.Id), IdPropietario: row.IdPropietario }
+}
+
+export async function addProjectMemberEndpoint(
+  req: Request,
+  res: Response<ApiResponse<unknown>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.id)
+    const targetUserId = String(req.body?.userId || '').trim()
+    const roleName = req.body?.roleName ? String(req.body.roleName).trim() : 'Miembro'
+    if (!targetUserId) throw new AppError('Se requiere el usuario a agregar', 400)
+
+    await assertCanManageProjectMembers(auth, projectId)
+
+    const pool = await getDbPool()
+    const checkUser = pool.request()
+    checkUser.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+    checkUser.input('uid', sql.UniqueIdentifier, targetUserId)
+    const userRow = await checkUser.query<{ Id: string }>(`
+      SELECT u.Id FROM Usuarios u
+      INNER JOIN MiembrosOrganizacion mo ON mo.IdUsuario = u.Id
+      WHERE u.Id = @uid AND mo.IdOrganizacion = @orgId;
+    `)
+    if (!userRow.recordset[0]) throw new NotFoundError('Usuario no encontrado en la organización')
+
+    const insert = pool.request()
+    insert.input('pid', sql.UniqueIdentifier, projectId)
+    insert.input('uid', sql.UniqueIdentifier, targetUserId)
+    insert.input('rol', sql.NVarChar(100), roleName)
+    const r = await insert.query<{ Id: string; NombreRol: string | null; FechaIngreso: Date | null; IdUsuario: string; NombreCompleto: string | null; Correo: string | null; UrlAvatar: string | null }>(`
+      IF EXISTS (SELECT 1 FROM MiembrosProyecto WHERE IdProyecto=@pid AND IdUsuario=@uid)
+        SELECT mp.Id, mp.NombreRol, mp.FechaIngreso, mp.IdUsuario, u.NombreCompleto, u.Correo, u.UrlAvatar
+        FROM MiembrosProyecto mp
+        INNER JOIN Usuarios u ON u.Id = mp.IdUsuario
+        WHERE mp.IdProyecto=@pid AND mp.IdUsuario=@uid;
+      ELSE
+        INSERT INTO MiembrosProyecto (IdProyecto, IdUsuario, NombreRol, FechaIngreso)
+        OUTPUT INSERTED.Id, INSERTED.NombreRol, INSERTED.FechaIngreso, INSERTED.IdUsuario,
+               (SELECT NombreCompleto FROM Usuarios WHERE Id=INSERTED.IdUsuario) NombreCompleto,
+               (SELECT Correo FROM Usuarios WHERE Id=INSERTED.IdUsuario) Correo,
+               (SELECT UrlAvatar FROM Usuarios WHERE Id=INSERTED.IdUsuario) UrlAvatar
+        VALUES (@pid, @uid, @rol, GETDATE());
+    `)
+    const m = r.recordset[0]
+    const data = {
+      id: String(m.Id),
+      userId: String(m.IdUsuario),
+      roleName: m.NombreRol ?? null,
+      joinedAt: m.FechaIngreso ? new Date(m.FechaIngreso).toISOString() : null,
+      fullName: m.NombreCompleto ?? null,
+      email: m.Correo ?? null,
+      avatarUrl: m.UrlAvatar ?? null,
+    }
+    res.status(200).json({ success: true, data })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function removeProjectMemberEndpoint(
+  req: Request,
+  res: Response<ApiResponse<void>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.id)
+    const memberId = String(req.params.memberId || '').trim()
+    if (!memberId) throw new AppError('Se requiere el miembro a retirar', 400)
+
+    const proj = await assertCanManageProjectMembers(auth, projectId)
+
+    const pool = await getDbPool()
+    const del = pool.request()
+    del.input('pid', sql.UniqueIdentifier, projectId)
+    del.input('mid', sql.UniqueIdentifier, memberId)
+    const ownerCheck = await del.query<{ IdUsuario: string }>(`
+      SELECT IdUsuario FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;
+    `)
+    const targetRow = ownerCheck.recordset[0]
+    if (!targetRow) throw new NotFoundError('Miembro no encontrado en el proyecto')
+    if (proj.IdPropietario && String(targetRow.IdUsuario).toLowerCase() === String(proj.IdPropietario).toLowerCase()) {
+      throw new AppError('No se puede retirar al propietario del proyecto', 400)
+    }
+    await pool.request()
+      .input('mid', sql.UniqueIdentifier, memberId)
+      .input('pid', sql.UniqueIdentifier, projectId)
+      .query(`DELETE FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;`)
+    res.status(204).end()
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function updateProjectMemberRoleEndpoint(
+  req: Request,
+  res: Response<ApiResponse<unknown>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.id)
+    const memberId = String(req.params.memberId || '').trim()
+    const roleName = req.body?.roleName ? String(req.body.roleName).trim() : null
+    if (!memberId) throw new AppError('Se requiere el miembro a actualizar', 400)
+
+    await assertCanManageProjectMembers(auth, projectId)
+
+    const pool = await getDbPool()
+    const upd = pool.request()
+    upd.input('pid', sql.UniqueIdentifier, projectId)
+    upd.input('mid', sql.UniqueIdentifier, memberId)
+    upd.input('rol', sql.NVarChar(100), roleName)
+    const r = await upd.query<{ Id: string; NombreRol: string | null; FechaIngreso: Date | null; IdUsuario: string; NombreCompleto: string | null; Correo: string | null; UrlAvatar: string | null }>(`
+      UPDATE MiembrosProyecto SET NombreRol = @rol
+      OUTPUT INSERTED.Id, INSERTED.NombreRol, INSERTED.FechaIngreso, INSERTED.IdUsuario,
+             (SELECT NombreCompleto FROM Usuarios WHERE Id=INSERTED.IdUsuario) NombreCompleto,
+             (SELECT Correo FROM Usuarios WHERE Id=INSERTED.IdUsuario) Correo,
+             (SELECT UrlAvatar FROM Usuarios WHERE Id=INSERTED.IdUsuario) UrlAvatar
+      WHERE Id=@mid AND IdProyecto=@pid;
+    `)
+    const m = r.recordset[0]
+    if (!m) throw new NotFoundError('Miembro no encontrado en el proyecto')
+    const data = {
+      id: String(m.Id),
+      userId: String(m.IdUsuario),
+      roleName: m.NombreRol ?? null,
+      joinedAt: m.FechaIngreso ? new Date(m.FechaIngreso).toISOString() : null,
+      fullName: m.NombreCompleto ?? null,
+      email: m.Correo ?? null,
+      avatarUrl: m.UrlAvatar ?? null,
+    }
+    res.status(200).json({ success: true, data })
   } catch (err) {
     next(err)
   }
