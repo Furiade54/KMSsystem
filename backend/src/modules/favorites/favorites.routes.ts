@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../../shared/middleware/auth'
+import { requirePermission } from '../../shared/middleware/rbac'
 import {
   listFavoritesEndpoint,
   checkFavoriteEndpoint,
@@ -10,10 +11,13 @@ import {
 
 const favoritesRouter = Router()
 
-favoritesRouter.get('/', requireAuth, listFavoritesEndpoint)
-favoritesRouter.get('/check', requireAuth, checkFavoriteEndpoint)
-favoritesRouter.put('/toggle', requireAuth, toggleFavoriteEndpoint)
-favoritesRouter.post('/', requireAuth, addFavoriteEndpoint)
-favoritesRouter.delete('/:resourceType/:resourceId', requireAuth, removeFavoriteEndpoint)
+favoritesRouter.use(requireAuth)
+favoritesRouter.use(requirePermission('favoritos.gestionar'))
+
+favoritesRouter.get('/', listFavoritesEndpoint)
+favoritesRouter.get('/check', checkFavoriteEndpoint)
+favoritesRouter.put('/toggle', toggleFavoriteEndpoint)
+favoritesRouter.post('/', addFavoriteEndpoint)
+favoritesRouter.delete('/:resourceType/:resourceId', removeFavoriteEndpoint)
 
 export default favoritesRouter

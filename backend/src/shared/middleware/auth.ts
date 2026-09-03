@@ -1,12 +1,16 @@
 import type { Request, Response, NextFunction } from 'express'
 import { verifyToken } from '../auth/crypto'
 import { UnauthorizedError } from '../errors/AppError'
+import type { PermissionCode, RoleAssignment } from '../../../../packages/shared-types/src'
 
 export interface AuthContext {
   userId: string
   organizationId: string
   email: string
   token: string
+  roles?: RoleAssignment[]
+  isOrgAdmin?: boolean
+  permissions?: ReadonlySet<PermissionCode>
 }
 
 declare global {

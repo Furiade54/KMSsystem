@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import multer from 'multer'
-import { uploadFile, listFiles, listAllFiles, getFileById, deleteFileById, verifyLocalDownloadSignature, updateFileById, copyFileById, commentFileById, listFileComments } from './files.service'
+import { uploadFile, listFiles, listAllFiles, getFileById, deleteFileById, verifyLocalDownloadSignature, updateFileById, copyFileById, commentFileById, listFileComments, updateFileCommentById, deleteFileCommentById } from './files.service'
 import { getStorageProvider } from '../../shared/storage'
 import type { ApiResponse, PaginatedResult } from '../../../../packages/shared-types/src'
 
@@ -160,6 +160,41 @@ export async function listFileCommentsEndpoint(
   }
 }
 
+type AuthFull = { auth: { organizationId: string; userId: string; isOrgAdmin?: boolean; permissions?: ReadonlySet<string> } }
+
+export async function updateFileCommentEndpoint(
+  req: Request,
+  res: Response<ApiResponse<any>>,
+  next: NextFunction
+) {
+  try {
+    const { auth } = req as unknown as AuthFull
+    const fileId = String(req.params.id)
+    const cid = String(req.params.cid)
+    const patch: any = req.body ?? {}
+    const data = await updateFileCommentById(auth, fileId, cid, {
+      content: patch.content,
+      resolved: patch.resolved,
+    }, { req })
+    res.status(200).json({ success: true, data })
+  } catch (e) { next(e) }
+}
+
+export async function deleteFileCommentEndpoint(
+  req: Request,
+  res: Response<ApiResponse<void>>,
+  next: NextFunction
+) {
+  try {
+    const { auth } = req as unknown as AuthFull
+    const fileId = String(req.params.id)
+    const cid = String(req.params.cid)
+    await deleteFileCommentById(auth, fileId, cid, { req })
+    res.status(204).end()
+  } catch (e) { next(e) }
+}
+
+
 export async function localDownloadEndpoint(
   req: Request,
   res: Response,
@@ -174,8 +209,10 @@ export async function localDownloadEndpoint(
     const stream = await storage.getObjectStream(v.key)
     if (!stream) return res.status(404).json({ success: false, error: 'Archivo no encontrado' })
     const head = await storage.headObject(v.key)
-    if (head.contentType) res.setHeader('Content-Type', head.contentType)
-    if (head.sizeBytes) res.setHeader('Content-Length', String(head.sizeBytes))
+    if (head && head.contentType) res.setHeader('Content-Type', head.contentType)
+    if (head && typeof head.contentLength === 'number' && Number.isFinite(head.contentLength)) {
+      res.setHeader('Content-Length', String(head.contentLength))
+    }
     const baseName = v.key.split('/').pop() || 'archivo'
     res.setHeader('Content-Disposition', `attachment; filename="${baseName}"`)
     stream.pipe(res)

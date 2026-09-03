@@ -112,8 +112,14 @@ export async function listOrganizationMembersHandler(req: Request, res: Response
     dReq.input('lim', sql.Int, pageSize)
     const rows = await dReq.query<any>(`
       SELECT u.Id, u.NombreCompleto, u.Correo, u.FechaCreacion, u.Estado,
-             ISNULL((SELECT TOP 1 mp.NombreRol FROM MiembrosProyecto mp WHERE mp.IdUsuario = u.Id ORDER BY mp.FechaIngreso DESC), 'Miembro') AS Rol,
-             (SELECT COUNT(*) FROM MiembrosProyecto mp WHERE mp.IdUsuario = u.Id) projectsCount
+             ISNULL((
+               SELECT TOP 1 r.Nombre
+               FROM RolesUsuario ru
+               INNER JOIN Roles r ON r.Id = ru.IdRol
+               WHERE ru.IdUsuario = u.Id AND ru.IdOrganizacion = @orgId
+               ORDER BY ISNULL(r.NivelPrioridad, 255) ASC, r.Nombre ASC
+             ), 'Miembro') AS Rol,
+             (SELECT COUNT(*) FROM MiembrosProyecto mp INNER JOIN Proyectos p ON p.Id = mp.IdProyecto WHERE mp.IdUsuario = u.Id AND p.Estado <> 'ELIMINADO') projectsCount
       FROM Usuarios u ${whereStr}
       ORDER BY u.NombreCompleto ASC, u.FechaCreacion ASC
       OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY

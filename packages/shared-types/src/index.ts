@@ -34,10 +34,14 @@ export interface User {
   email: string
   passwordHash?: string
   avatarUrl: string | null
+  phone?: string | null
+  position?: string | null
   status: EntityStatus
   lastLogin?: string | null
   createdAt: string
   updatedAt?: string | null
+  roles?: Array<{ id: string; name: string; isSystemRole: boolean; priorityLevel?: number; assignedAt?: string | null; assignedBy?: string | null }>
+  isOrgAdmin?: boolean
 }
 
 export interface Role {
@@ -46,42 +50,116 @@ export interface Role {
   name: string
   description?: string | null
   isSystemRole: boolean
+  priorityLevel?: number
   createdAt: string
+  updatedAt?: string | null
 }
 
 export interface UserRole {
   id: string
   userId: string
   roleId: string
+  organizationId: string
+  assignedAt?: string | null
+  assignedBy?: string | null
+}
+
+export interface RoleAssignment {
+  id: string
+  userId: string
+  roleId: string
+  roleName: string
+  roleDescription?: string | null
+  isSystemRole: boolean
+  priorityLevel?: number
+  assignedAt?: string | null
+  assignedBy?: string | null
+  assignedByName?: string | null
+}
+
+export interface CreateUserDto {
+  fullName: string
+  email: string
+  password?: string
+  phone?: string | null
+  position?: string | null
+  status?: EntityStatus
+  roleIds?: string[]
+}
+
+export interface UpdateUserDto {
+  fullName?: string
+  email?: string
+  phone?: string | null
+  position?: string | null
+  avatarUrl?: string | null
+  status?: EntityStatus
+  password?: string
+  roleIds?: string[]
 }
 
 export interface Permission {
   id: string
-  code: string
+  code: PermissionCode
   description?: string | null
 }
 
 export type PermissionCode =
-  | 'ORG_VIEW'
-  | 'ORG_MANAGE'
-  | 'USER_VIEW'
-  | 'USER_MANAGE'
-  | 'ROLE_MANAGE'
-  | 'PROJECT_CREATE'
-  | 'PROJECT_VIEW'
-  | 'PROJECT_MANAGE'
-  | 'FILE_VIEW'
-  | 'FILE_DOWNLOAD'
-  | 'FILE_UPLOAD'
-  | 'FILE_COMMENT'
-  | 'FILE_UPDATE_VERSION'
-  | 'FILE_SHARE'
-  | 'FILE_DELETE'
-  | 'FOLDER_CREATE'
-  | 'FOLDER_MANAGE'
-  | 'REVIEW_REQUEST'
-  | 'REVIEW_APPROVE'
-  | 'AUDIT_VIEW'
+  | 'org.ver'
+  | 'org.editar'
+  | 'usuarios.ver'
+  | 'usuarios.crear'
+  | 'usuarios.editar'
+  | 'usuarios.eliminar'
+  | 'roles.ver'
+  | 'roles.asignar'
+  | 'roles.crear'
+  | 'solicitudes.gestionar'
+  | 'proyectos.ver'
+  | 'proyectos.crear'
+  | 'proyectos.editar'
+  | 'proyectos.eliminar'
+  | 'proyectos.miembros.gestionar'
+  | 'archivos.ver'
+  | 'archivos.subir'
+  | 'archivos.editar'
+  | 'archivos.eliminar'
+  | 'archivos.compartir'
+  | 'comentarios.crear'
+  | 'comentarios.gestionar'
+  | 'favoritos.gestionar'
+  | 'auditoria.ver'
+  | 'revisiones.asignar'
+  | 'revisiones.ver'
+
+export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
+  'org.ver',
+  'org.editar',
+  'usuarios.ver',
+  'usuarios.crear',
+  'usuarios.editar',
+  'usuarios.eliminar',
+  'roles.ver',
+  'roles.asignar',
+  'roles.crear',
+  'solicitudes.gestionar',
+  'proyectos.ver',
+  'proyectos.crear',
+  'proyectos.editar',
+  'proyectos.eliminar',
+  'proyectos.miembros.gestionar',
+  'archivos.ver',
+  'archivos.subir',
+  'archivos.editar',
+  'archivos.eliminar',
+  'archivos.compartir',
+  'comentarios.crear',
+  'comentarios.gestionar',
+  'favoritos.gestionar',
+  'auditoria.ver',
+  'revisiones.asignar',
+  'revisiones.ver',
+])
 
 // --- Trabajo colaborativo ---
 

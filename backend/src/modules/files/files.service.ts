@@ -743,3 +743,88 @@ export async function listFileComments(
     createdAt: sqlLocalToIso(r.FechaCreacion as any),
   }))
 }
+
+export async function updateFileCommentById(
+  auth: { organizationId: string; userId: string } & { isOrgAdmin?: boolean; permissions?: ReadonlySet<string> },
+  fileId: string,
+  commentId: string,
+  patch: { content?: string; resolved?: boolean },
+  opts?: { req?: Request | null }
+): Promise<{ id: string; fileId: string; userId: string; content?: string; resolved?: boolean }> {
+  await ensureAuditAndCommentTables()
+  if (patch.content !== undefined) {
+    const content = String(patch.content ?? '').trim()
+    if (content.length === 0 || content.length > 2000) throw new AppError('Comentario inválido', 400)
+  }
+  const pool = await getDbPool()
+  const gf = pool.request()
+  gf.input('fileId', sql.UniqueIdentifier, fileId)
+  const f = await gf.query<any>('SELECT IdProyecto, Nombre FROM Archivos WHERE Id=@fileId')
+  if (!f.recordset.length) throw new NotFoundError('Archivo no encontrado')
+  const projectId = String(f.recordset[0].IdProyecto)
+  await ensureProjectAccess(pool, auth, projectId)
+  const gc = pool.request()
+  gc.input('cid', sql.UniqueIdentifier, commentId)
+  gc.input('fileId', sql.UniqueIdentifier, fileId)
+  const row = await gc.query<any>(`SELECT Id, IdUsuario, Contenido, Resuelto FROM Comentarios WHERE Id=@cid AND IdRecurso=@fileId AND TipoRecurso='file'`)
+  if (!row.recordset.length) throw new NotFoundError('Comentario no encontrado')
+  const c = row.recordset[0]
+  const canManage = auth?.permissions?.has('comentarios.gestionar') || !!auth?.isOrgAdmin
+  if (String(c.IdUsuario) !== String(auth.userId) && !canManage) throw new ForbiddenError('No puedes editar este comentario')
+  const content = patch.content !== undefined ? String(patch.content).trim() : c.Contenido
+  const resolved = patch.resolved !== undefined ? (patch.resolved ? 1 : 0) : null
+  const up = pool.request()
+  up.input('cid', sql.UniqueIdentifier, commentId)
+  up.input('content', sql.NVarChar(sql.MAX), content)
+  if (resolved !== null) up.input('res', sql.Bit, resolved)
+  await up.query(`UPDATE Comentarios SET Contenido=@content, FechaActualizacion=SYSUTCDATETIME()${resolved !== null ? ', Resuelto=@res' : ''} WHERE Id=@cid`)
+  logAuditRecord({
+    organizationId: auth.organizationId,
+    userId: auth.userId,
+    action: 'file.comentario.editado',
+    resourceType: 'file',
+    resourceId: fileId,
+    resourceName: String(f.recordset[0].Nombre),
+    extra: { commentId, byOwner: String(c.IdUsuario) === auth.userId ? 'owner' : 'gestor', managed: canManage },
+    req: opts?.req ?? null,
+  })
+  return {
+    id: commentId,
+    fileId,
+    userId: String(c.IdUsuario),
+    content,
+    resolved: resolved !== null ? !!resolved : !!c.Resuelto,
+  }
+}
+
+export async function deleteFileCommentById(
+  auth: { organizationId: string; userId: string } & { isOrgAdmin?: boolean; permissions?: ReadonlySet<string> },
+  fileId: string,
+  commentId: string,
+  opts?: { req?: Request | null }
+): Promise<void> {
+  await ensureAuditAndCommentTables()
+  const pool = await getDbPool()
+  const gf = pool.request()
+  gf.input('fileId', sql.UniqueIdentifier, fileId)
+  const f = await gf.query<any>('SELECT IdProyecto, Nombre FROM Archivos WHERE Id=@fileId')
+  if (!f.recordset.length) throw new NotFoundError('Archivo no encontrado')
+  const projectId = String(f.recordset[0].IdProyecto)
+  await ensureProjectAccess(pool, auth, projectId)
+  const gc = pool.request()
+  gc.input('cid', sql.UniqueIdentifier, commentId)
+  gc.input('fileId', sql.UniqueIdentifier, fileId)
+  const row = await gc.query<any>(`SELECT Id, IdUsuario FROM Comentarios WHERE Id=@cid AND IdRecurso=@fileId AND TipoRecurso='file'`)
+  if (!row.recordset.length) throw new NotFoundError('Comentario no encontrado')
+  const c = row.recordset[0]
+  const canManage = !!auth?.isOrgAdmin || auth?.permissions?.has('comentarios.gestionar')
+  if (String(c.IdUsuario) !== String(auth.userId) && !canManage) throw new ForbiddenError('No puedes eliminar este comentario')
+  await pool.request().input('cid', sql.UniqueIdentifier, commentId).query(`DELETE FROM Comentarios WHERE Id=@cid`)
+  logAuditRecord({
+    organizationId: auth.organizationId, userId: auth.userId,
+    action: 'file.comentario.eliminado', resourceType: 'file', resourceId: fileId,
+    resourceName: String(f.recordset[0].Nombre), extra: { commentId },
+    req: opts?.req ?? null,
+  })
+}
+

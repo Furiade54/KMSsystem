@@ -19,6 +19,15 @@ export interface UserShape {
   lastLogin?: string | null
   createdAt: string
   updatedAt?: string | null
+  roles?: Array<{
+    id: string
+    name: string
+    isSystemRole: boolean
+    priorityLevel?: number
+    assignedAt?: string | null
+    assignedBy?: string | null
+  }>
+  isOrgAdmin?: boolean
 }
 
 const TOKEN_KEY = 'kms_token'

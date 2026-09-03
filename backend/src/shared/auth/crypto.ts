@@ -16,11 +16,17 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function comparePassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash)
+  if (!password || !hash) return false
+  try {
+    return await bcrypt.compare(password, hash)
+  } catch {
+    return false
+  }
 }
 
 export function signToken(payload: TokenPayload): string {
   const secret: jwt.Secret = env.JWT_SECRET as jwt.Secret
+  if (!secret) throw new Error('JWT_SECRET no configurado')
   return jwt.sign(payload, secret, {
     expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
   })

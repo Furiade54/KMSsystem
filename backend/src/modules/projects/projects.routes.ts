@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../../shared/middleware/auth'
+import { requirePermission } from '../../shared/middleware/rbac'
 import {
   listProjects,
   getProject,
@@ -15,15 +16,33 @@ import {
 
 const projectsRouter = Router()
 
-projectsRouter.get('/', requireAuth, listProjects)
-projectsRouter.get('/:id', requireAuth, getProject)
-projectsRouter.get('/:id/miembros', requireAuth, getProjectMembers)
-projectsRouter.post('/:id/miembros', requireAuth, addProjectMemberEndpoint)
-projectsRouter.delete('/:id/miembros/:memberId', requireAuth, removeProjectMemberEndpoint)
-projectsRouter.patch('/:id/miembros/:memberId', requireAuth, updateProjectMemberRoleEndpoint)
-projectsRouter.delete('/:id/permanent', requireAuth, permanentlyDeleteProjectEndpoint)
-projectsRouter.post('/', requireAuth, createProject)
-projectsRouter.patch('/:id', requireAuth, updateProject)
-projectsRouter.delete('/:id', requireAuth, deleteProject)
+projectsRouter.use(requireAuth)
+
+projectsRouter.get('/', requirePermission('proyectos.ver'), listProjects)
+projectsRouter.get('/:id', requirePermission('proyectos.ver'), getProject)
+projectsRouter.get('/:id/miembros', requirePermission('proyectos.ver'), getProjectMembers)
+projectsRouter.post(
+  '/:id/miembros',
+  requirePermission('proyectos.miembros.gestionar'),
+  addProjectMemberEndpoint
+)
+projectsRouter.delete(
+  '/:id/miembros/:memberId',
+  requirePermission('proyectos.miembros.gestionar'),
+  removeProjectMemberEndpoint
+)
+projectsRouter.patch(
+  '/:id/miembros/:memberId',
+  requirePermission('proyectos.miembros.gestionar'),
+  updateProjectMemberRoleEndpoint
+)
+projectsRouter.delete(
+  '/:id/permanent',
+  requirePermission('proyectos.eliminar'),
+  permanentlyDeleteProjectEndpoint
+)
+projectsRouter.post('/', requirePermission('proyectos.crear'), createProject)
+projectsRouter.patch('/:id', requirePermission('proyectos.editar'), updateProject)
+projectsRouter.delete('/:id', requirePermission('proyectos.eliminar'), deleteProject)
 
 export default projectsRouter
