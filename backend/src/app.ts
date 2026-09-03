@@ -7,6 +7,7 @@ import { errorHandler, notFoundHandler } from './shared/middleware/errorHandler'
 
 import configRouter from './modules/config/config.routes'
 import authRouter from './modules/auth/auth.routes'
+import usersRouter from './modules/users/users.routes'
 import projectsRouter from './modules/projects/projects.routes'
 import filesRouter from './modules/files/files.routes'
 import foldersRouter from './modules/folders/folders.routes'
@@ -14,6 +15,10 @@ import searchRouter from './modules/search/search.routes'
 import activityRouter from './modules/activity/activity.routes'
 import requestsRouter from './modules/requests/requests.routes'
 import favoritesRouter from './modules/favorites/favorites.routes'
+import organizationsRouter from './modules/organizations/organizations.routes'
+import rolesRouter from './modules/roles/roles.routes'
+import revisionsRouter from './modules/revisions/revisions.routes'
+import sharesRouter from './modules/shares/shares.routes'
 
 const app = express()
 
@@ -53,6 +58,9 @@ app.get('/', (_req: Request, res: Response) => {
 })
 
 app.use('/api/auth', authRouter)
+app.use('/api/organizacion', organizationsRouter)
+app.use('/api/usuarios', usersRouter)
+app.use('/api/roles', rolesRouter)
 app.use('/api/projects', projectsRouter)
 app.use('/api/archivos', filesRouter)
 app.use('/api/carpetas', foldersRouter)
@@ -60,6 +68,8 @@ app.use('/api/buscar', searchRouter)
 app.use('/api/actividad', activityRouter)
 app.use('/api/solicitudes', requestsRouter)
 app.use('/api/favorites', favoritesRouter)
+app.use('/api/revisiones', revisionsRouter)
+app.use('/api/compartidos', sharesRouter)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

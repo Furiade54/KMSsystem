@@ -119,10 +119,14 @@ export async function listProjects(
 
     if (status && status.trim().length > 0) {
       const stRaw = status.trim().toUpperCase()
-      const st = statusTranslateEnToEs[stRaw] ?? stRaw
-      countReq.input('st', sql.VarChar(30), st)
-      dataReq.input('st', sql.VarChar(30), st)
-      whereClauses += ` AND p.Estado = @st`
+      if (stRaw !== 'ALL' && stRaw !== '') {
+        const st = statusTranslateEnToEs[stRaw] ?? stRaw
+        countReq.input('st', sql.VarChar(30), st)
+        dataReq.input('st', sql.VarChar(30), st)
+        whereClauses += ` AND p.Estado = @st`
+      } else {
+        whereClauses += ` AND p.Estado <> 'ELIMINADO'`
+      }
     } else {
       whereClauses += ` AND p.Estado <> 'ELIMINADO'`
     }
@@ -502,8 +506,7 @@ export async function addProjectMemberEndpoint(
     checkUser.input('uid', sql.UniqueIdentifier, targetUserId)
     const userRow = await checkUser.query<{ Id: string }>(`
       SELECT u.Id FROM Usuarios u
-      INNER JOIN MiembrosOrganizacion mo ON mo.IdUsuario = u.Id
-      WHERE u.Id = @uid AND mo.IdOrganizacion = @orgId;
+      WHERE u.Id = @uid AND u.IdOrganizacion = @orgId;
     `)
     if (!userRow.recordset[0]) throw new NotFoundError('Usuario no encontrado en la organización')
 
@@ -511,19 +514,20 @@ export async function addProjectMemberEndpoint(
     insert.input('pid', sql.UniqueIdentifier, projectId)
     insert.input('uid', sql.UniqueIdentifier, targetUserId)
     insert.input('rol', sql.NVarChar(100), roleName)
-    const r = await insert.query<{ Id: string; NombreRol: string | null; FechaIngreso: Date | null; IdUsuario: string; NombreCompleto: string | null; Correo: string | null; UrlAvatar: string | null }>(`
-      IF EXISTS (SELECT 1 FROM MiembrosProyecto WHERE IdProyecto=@pid AND IdUsuario=@uid)
-        SELECT mp.Id, mp.NombreRol, mp.FechaIngreso, mp.IdUsuario, u.NombreCompleto, u.Correo, u.UrlAvatar
-        FROM MiembrosProyecto mp
-        INNER JOIN Usuarios u ON u.Id = mp.IdUsuario
-        WHERE mp.IdProyecto=@pid AND mp.IdUsuario=@uid;
-      ELSE
+    await insert.query(`
+      IF NOT EXISTS (SELECT 1 FROM MiembrosProyecto WHERE IdProyecto=@pid AND IdUsuario=@uid)
         INSERT INTO MiembrosProyecto (IdProyecto, IdUsuario, NombreRol, FechaIngreso)
-        OUTPUT INSERTED.Id, INSERTED.NombreRol, INSERTED.FechaIngreso, INSERTED.IdUsuario,
-               (SELECT NombreCompleto FROM Usuarios WHERE Id=INSERTED.IdUsuario) NombreCompleto,
-               (SELECT Correo FROM Usuarios WHERE Id=INSERTED.IdUsuario) Correo,
-               (SELECT UrlAvatar FROM Usuarios WHERE Id=INSERTED.IdUsuario) UrlAvatar
         VALUES (@pid, @uid, @rol, GETDATE());
+    `)
+
+    const readback = pool.request()
+    readback.input('pid', sql.UniqueIdentifier, projectId)
+    readback.input('uid', sql.UniqueIdentifier, targetUserId)
+    const r = await readback.query<{ Id: string; NombreRol: string | null; FechaIngreso: Date | null; IdUsuario: string; NombreCompleto: string | null; Correo: string | null; UrlAvatar: string | null }>(`
+      SELECT mp.Id, mp.NombreRol, mp.FechaIngreso, mp.IdUsuario, u.NombreCompleto, u.Correo, u.UrlAvatar
+      FROM MiembrosProyecto mp
+        INNER JOIN Usuarios u ON u.Id = mp.IdUsuario
+      WHERE mp.IdProyecto=@pid AND mp.IdUsuario=@uid;
     `)
     const m = r.recordset[0]
     const data = {

@@ -6,6 +6,7 @@ import {
   Clock,
   FileText,
   Users,
+  Shield,
   BellRing,
   Trash2,
   Plus,
@@ -32,6 +33,7 @@ const navItems: Array<{
   { to: '/activity', label: 'Actividad reciente', icon: Clock },
   { to: '/documents', label: 'Mis documentos', icon: FileText },
   { to: '/teams', label: 'Equipos', icon: Users },
+  { to: '/users', label: 'Usuarios', icon: Shield },
   { to: '/requests', label: 'Solicitudes', icon: BellRing, dynamicBadge: true },
   { to: '/trash', label: 'Papelera', icon: Trash2 },
 ]
@@ -55,6 +57,12 @@ function Sidebar() {
 
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const isOrgAdmin = !!user?.isOrgAdmin
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.to === '/users') return isOrgAdmin
+    return true
+  })
 
   const avatarInitials = user?.fullName
     ? user.fullName
@@ -85,7 +93,7 @@ function Sidebar() {
         </NavLink>
 
         <div className="space-y-0.5">
-          {navItems.map(({ to, label, icon: Icon, badge, dynamicBadge }) => {
+          {visibleNavItems.map(({ to, label, icon: Icon, badge, dynamicBadge }) => {
             const badgeValue = dynamicBadge ? requestsCountQuery.data?.pendingReceived ?? 0 : badge ?? 0
             const showBadge = dynamicBadge ? requestsCountQuery.isSuccess && badgeValue > 0 : !!badge
             return (

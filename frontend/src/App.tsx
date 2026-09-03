@@ -10,6 +10,7 @@ import DocumentsPage from './pages/DocumentsPage'
 import FavoritesPage from './pages/FavoritesPage'
 import TrashPage from './pages/TrashPage'
 import TeamsPage from './pages/TeamsPage'
+import UsersPage from './pages/UsersPage'
 import RequestsPage from './pages/RequestsPage'
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
         <Route path="favorites" element={<FavoritesPage />} />
         <Route path="trash" element={<TrashPage />} />
         <Route path="teams" element={<TeamsPage />} />
+        <Route path="users" element={<UsersPage />} />
         <Route path="requests" element={<RequestsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

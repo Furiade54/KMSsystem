@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../../shared/middleware/auth'
+import { requirePermission } from '../../shared/middleware/rbac'
 import {
   uploadMiddleware,
   uploadFileEndpoint,
@@ -11,20 +12,40 @@ import {
   copyFileEndpoint,
   commentFileEndpoint,
   listFileCommentsEndpoint,
+  updateFileCommentEndpoint,
+  deleteFileCommentEndpoint,
 } from './files.controller'
+import { shareFileEndpoint } from '../shares/shares.controller'
 
 const filesRouter = Router()
 
 filesRouter.get('/local-download/:key', localDownloadEndpoint)
 
-filesRouter.post('/', requireAuth, uploadMiddleware, uploadFileEndpoint)
-filesRouter.post('/upload', requireAuth, uploadMiddleware, uploadFileEndpoint)
-filesRouter.get('/', requireAuth, listFilesEndpoint)
-filesRouter.get('/:id', requireAuth, getFileEndpoint)
-filesRouter.patch('/:id', requireAuth, updateFileEndpoint)
-filesRouter.post('/:id/copy', requireAuth, copyFileEndpoint)
-filesRouter.get('/:id/comentarios', requireAuth, listFileCommentsEndpoint)
-filesRouter.post('/:id/comentarios', requireAuth, commentFileEndpoint)
-filesRouter.delete('/:id', requireAuth, deleteFileEndpoint)
+filesRouter.use(requireAuth)
+
+filesRouter.post('/', requirePermission('archivos.subir'), uploadMiddleware, uploadFileEndpoint)
+filesRouter.post('/upload', requirePermission('archivos.subir'), uploadMiddleware, uploadFileEndpoint)
+filesRouter.get('/', requirePermission('archivos.ver'), listFilesEndpoint)
+filesRouter.get('/:id', requirePermission('archivos.ver'), getFileEndpoint)
+filesRouter.patch('/:id', requirePermission('archivos.editar'), updateFileEndpoint)
+filesRouter.post('/:id/copy', requirePermission('archivos.editar'), copyFileEndpoint)
+filesRouter.post('/:id/compartir', requirePermission('archivos.compartir'), shareFileEndpoint)
+filesRouter.get('/:id/comentarios', requirePermission('archivos.ver'), listFileCommentsEndpoint)
+filesRouter.post(
+  '/:id/comentarios',
+  requirePermission(['comentarios.crear', 'archivos.ver']),
+  commentFileEndpoint
+)
+filesRouter.patch(
+  '/:id/comentarios/:cid',
+  requirePermission(['comentarios.gestionar', 'comentarios.crear', 'archivos.ver']),
+  updateFileCommentEndpoint
+)
+filesRouter.delete(
+  '/:id/comentarios/:cid',
+  requirePermission(['comentarios.gestionar', 'comentarios.crear', 'archivos.ver']),
+  deleteFileCommentEndpoint
+)
+filesRouter.delete('/:id', requirePermission('archivos.eliminar'), deleteFileEndpoint)
 
 export default filesRouter

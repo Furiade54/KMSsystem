@@ -94,9 +94,9 @@ export async function logAuditRecord(params: {
     q.input('userId', sql.UniqueIdentifier, params.userId)
     q.input('accion', sql.VarChar(100), String(params.action ?? '').slice(0, 100))
     q.input('tipo', sql.VarChar(50), String(params.resourceType ?? '').slice(0, 50) || null)
-    q.input('rid', sql.UniqueIdentifier, params.resourceId)
-    q.input('ip', sql.VarChar(50), trace.ip)
-    q.input('ua', sql.NVarChar(500), trace.ua)
+    q.input('rid', sql.UniqueIdentifier, params.resourceId || null)
+    q.input('ip', sql.VarChar(50), trace.ip ? trace.ip.slice(0, 50) : null)
+    q.input('ua', sql.NVarChar(500), trace.ua ? trace.ua.slice(0, 500) : null)
     q.input('meta', sql.NVarChar(sql.MAX), metadataStr)
     await q.query(`
       INSERT INTO Auditoria (IdOrganizacion, IdUsuario, Accion, TipoRecurso, IdRecurso, Ip, AgenteUsuario, Metadatos)
