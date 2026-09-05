@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Loader2,
   LogOut,
+  Landmark,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -26,6 +27,7 @@ const navItems: Array<{
   icon: typeof Building2
   badge?: number
   dynamicBadge?: true
+  adminOnly?: boolean
 }> = [
   { to: '/dashboard', label: 'Panel de control', icon: Building2 },
   { to: '/projects', label: 'Mis proyectos', icon: FolderKanban },
@@ -33,7 +35,9 @@ const navItems: Array<{
   { to: '/activity', label: 'Actividad reciente', icon: Clock },
   { to: '/documents', label: 'Mis documentos', icon: FileText },
   { to: '/teams', label: 'Equipos', icon: Users },
-  { to: '/users', label: 'Usuarios', icon: Shield },
+  { to: '/organizations/me', label: 'Mi organización', icon: Building2 },
+  { to: '/organizations', label: 'Organizaciones', icon: Landmark, adminOnly: true },
+  { to: '/users', label: 'Usuarios', icon: Shield, adminOnly: true },
   { to: '/requests', label: 'Solicitudes', icon: BellRing, dynamicBadge: true },
   { to: '/trash', label: 'Papelera', icon: Trash2 },
 ]
@@ -60,7 +64,7 @@ function Sidebar() {
   const isOrgAdmin = !!user?.isOrgAdmin
 
   const visibleNavItems = navItems.filter((item) => {
-    if (item.to === '/users') return isOrgAdmin
+    if (item.adminOnly) return isOrgAdmin
     return true
   })
 
