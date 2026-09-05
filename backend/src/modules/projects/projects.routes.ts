@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireAuth } from '../../shared/middleware/auth'
-import { requirePermission } from '../../shared/middleware/rbac'
+import { requirePermission, requireResourcePermission } from '../../shared/middleware/rbac'
 import {
   listProjects,
   getProject,
@@ -13,36 +13,27 @@ import {
   removeProjectMemberEndpoint,
   updateProjectMemberRoleEndpoint,
 } from './projects.controller'
+import {
+  listPermissionsByResourceHandler,
+  upsertPermissionByResourceHandler,
+} from '../resource-permissions/resource-permissions.controller'
 
 const projectsRouter = Router()
 
 projectsRouter.use(requireAuth)
 
 projectsRouter.get('/', requirePermission('proyectos.ver'), listProjects)
-projectsRouter.get('/:id', requirePermission('proyectos.ver'), getProject)
-projectsRouter.get('/:id/miembros', requirePermission('proyectos.ver'), getProjectMembers)
-projectsRouter.post(
-  '/:id/miembros',
-  requirePermission('proyectos.miembros.gestionar'),
-  addProjectMemberEndpoint
-)
-projectsRouter.delete(
-  '/:id/miembros/:memberId',
-  requirePermission('proyectos.miembros.gestionar'),
-  removeProjectMemberEndpoint
-)
-projectsRouter.patch(
-  '/:id/miembros/:memberId',
-  requirePermission('proyectos.miembros.gestionar'),
-  updateProjectMemberRoleEndpoint
-)
-projectsRouter.delete(
-  '/:id/permanent',
-  requirePermission('proyectos.eliminar'),
-  permanentlyDeleteProjectEndpoint
-)
+projectsRouter.get('/:id', requireResourcePermission('PROJECT', 'VER'), getProject)
+projectsRouter.get('/:id/miembros', requireResourcePermission('PROJECT', 'VER'), getProjectMembers)
+projectsRouter.post('/:id/miembros', requireResourcePermission('PROJECT', 'COMPARTIR'), addProjectMemberEndpoint)
+projectsRouter.delete('/:id/miembros/:memberId', requireResourcePermission('PROJECT', 'COMPARTIR'), removeProjectMemberEndpoint)
+projectsRouter.patch('/:id/miembros/:memberId', requireResourcePermission('PROJECT', 'COMPARTIR'), updateProjectMemberRoleEndpoint)
+projectsRouter.delete('/:id/permanent', requireResourcePermission('PROJECT', 'ADMINISTRAR'), permanentlyDeleteProjectEndpoint)
 projectsRouter.post('/', requirePermission('proyectos.crear'), createProject)
-projectsRouter.patch('/:id', requirePermission('proyectos.editar'), updateProject)
-projectsRouter.delete('/:id', requirePermission('proyectos.eliminar'), deleteProject)
+projectsRouter.patch('/:id', requireResourcePermission('PROJECT', 'EDITAR'), updateProject)
+projectsRouter.delete('/:id', requireResourcePermission('PROJECT', 'ADMINISTRAR'), deleteProject)
+
+projectsRouter.get('/:id/permisos', requirePermission(['proyectos.ver', 'recursos.permisos.ver'] as any), listPermissionsByResourceHandler)
+projectsRouter.post('/:id/permisos', requirePermission(['proyectos.editar', 'recursos.permisos.editar'] as any), upsertPermissionByResourceHandler)
 
 export default projectsRouter

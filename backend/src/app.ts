@@ -19,6 +19,7 @@ import organizationsRouter from './modules/organizations/organizations.routes'
 import rolesRouter from './modules/roles/roles.routes'
 import revisionsRouter from './modules/revisions/revisions.routes'
 import sharesRouter from './modules/shares/shares.routes'
+import { resourcePermissionsRouter } from './modules/resource-permissions/resource-permissions.routes'
 
 const app = express()
 
@@ -70,6 +71,7 @@ app.use('/api/solicitudes', requestsRouter)
 app.use('/api/favorites', favoritesRouter)
 app.use('/api/revisiones', revisionsRouter)
 app.use('/api/compartidos', sharesRouter)
+app.use('/api/permisos-recurso', resourcePermissionsRouter)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

@@ -1,9 +1,11 @@
 import type { Request, Response, NextFunction } from 'express'
 import type { ApiResponse, Project, PaginatedResult } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
+import { logAuditRecord } from '../../shared/db/audit'
 import { AppError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
 import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
 import { permanentlyDeleteProject } from './projects.service'
+import { cleanupGrantsForUserInProject } from '../resource-permissions/resource-permissions.service'
 
 type ProjectRow = {
   Id: string
@@ -194,7 +196,6 @@ export async function getProject(
         (SELECT COUNT(*) FROM Archivos a WHERE a.IdProyecto=p.Id) archivosCount
       FROM Proyectos p
       WHERE p.Id = @id AND p.IdOrganizacion = @orgId AND p.Estado <> 'ELIMINADO'
-        AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id AND mp.IdUsuario=@userId))
     `)
     const row = r.recordset[0]
     if (!row) throw new NotFoundError('Proyecto no encontrado')
@@ -468,14 +469,14 @@ export async function permanentlyDeleteProjectEndpoint(
 async function assertCanManageProjectMembers(
   auth: { organizationId: string; userId: string },
   projectId: string
-): Promise<{ IdProyecto: string; IdPropietario: string | null }> {
+): Promise<{ IdProyecto: string; IdPropietario: string | null; Nombre: string }> {
   const pool = await getDbPool()
   const qry = pool.request()
   qry.input('orgId', sql.UniqueIdentifier, auth.organizationId)
   qry.input('userId', sql.UniqueIdentifier, auth.userId)
   qry.input('projectId', sql.UniqueIdentifier, projectId)
-  const r = await qry.query<{ Id: string; IdPropietario: string | null }>(`
-    SELECT Id, IdPropietario FROM Proyectos p
+  const r = await qry.query<{ Id: string; IdPropietario: string | null; Nombre: string }>(`
+    SELECT Id, IdPropietario, Nombre FROM Proyectos p
     WHERE p.Id = @projectId AND p.IdOrganizacion = @orgId AND p.Estado <> 'ELIMINADO'
       AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id AND mp.IdUsuario=@userId));
   `)
@@ -483,7 +484,7 @@ async function assertCanManageProjectMembers(
   if (!row) throw new NotFoundError('Proyecto no encontrado')
   const isOwner = row.IdPropietario && String(row.IdPropietario).toLowerCase() === String(auth.userId).toLowerCase()
   if (!isOwner) throw new ForbiddenError('Solo el propietario del proyecto puede gestionar sus miembros')
-  return { IdProyecto: String(row.Id), IdPropietario: row.IdPropietario }
+  return { IdProyecto: String(row.Id), IdPropietario: row.IdPropietario, Nombre: String(row.Nombre ?? '') }
 }
 
 export async function addProjectMemberEndpoint(
@@ -559,21 +560,68 @@ export async function removeProjectMemberEndpoint(
     const proj = await assertCanManageProjectMembers(auth, projectId)
 
     const pool = await getDbPool()
-    const del = pool.request()
-    del.input('pid', sql.UniqueIdentifier, projectId)
-    del.input('mid', sql.UniqueIdentifier, memberId)
-    const ownerCheck = await del.query<{ IdUsuario: string }>(`
-      SELECT IdUsuario FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;
-    `)
-    const targetRow = ownerCheck.recordset[0]
-    if (!targetRow) throw new NotFoundError('Miembro no encontrado en el proyecto')
-    if (proj.IdPropietario && String(targetRow.IdUsuario).toLowerCase() === String(proj.IdPropietario).toLowerCase()) {
-      throw new AppError('No se puede retirar al propietario del proyecto', 400)
+    const tx = pool.transaction()
+    let targetUserId: string | null = null
+    let targetUserName: string | null = null
+    let targetUserEmail: string | null = null
+    let revokedGrants = 0
+
+    try {
+      await tx.begin()
+
+      const check = tx.request()
+      check.input('pid', sql.UniqueIdentifier, projectId)
+      check.input('mid', sql.UniqueIdentifier, memberId)
+      const ownerCheck = await check.query<{ IdUsuario: string }>(`
+        SELECT IdUsuario FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;
+      `)
+      const targetRow = ownerCheck.recordset[0]
+      if (!targetRow) throw new NotFoundError('Miembro no encontrado en el proyecto')
+      targetUserId = String(targetRow.IdUsuario)
+      if (proj.IdPropietario && String(targetRow.IdUsuario).toLowerCase() === String(proj.IdPropietario).toLowerCase()) {
+        throw new AppError('No se puede retirar al propietario del proyecto', 400)
+      }
+
+      const u = tx.request()
+      u.input('uid', sql.UniqueIdentifier, targetUserId)
+      const uRes = await u.query<{ NombreCompleto: string | null; Correo: string | null }>(`
+        SELECT NombreCompleto, Correo FROM Usuarios WHERE Id=@uid;
+      `)
+      targetUserName = uRes.recordset[0]?.NombreCompleto ?? null
+      targetUserEmail = uRes.recordset[0]?.Correo ?? null
+
+      const delMember = tx.request()
+      delMember.input('mid', sql.UniqueIdentifier, memberId)
+      delMember.input('pid', sql.UniqueIdentifier, projectId)
+      const delMembers = await delMember.query(`DELETE FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;`)
+      if (Number(delMembers.rowsAffected?.[0] ?? 0) === 0) {
+        throw new NotFoundError('Miembro no encontrado en el proyecto')
+      }
+
+      revokedGrants = await cleanupGrantsForUserInProject(tx, projectId, targetUserId)
+
+      await tx.commit()
+    } catch (err) {
+      try { await tx.rollback() } catch { /* ignore */ }
+      throw err
     }
-    await pool.request()
-      .input('mid', sql.UniqueIdentifier, memberId)
-      .input('pid', sql.UniqueIdentifier, projectId)
-      .query(`DELETE FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;`)
+
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'project.miembro.retirado',
+      resourceType: 'project',
+      resourceId: projectId,
+      resourceName: proj?.Nombre ?? null,
+      extra: {
+        miembroId: memberId,
+        usuarioRetirado: { id: targetUserId, nombre: targetUserName, email: targetUserEmail },
+        permisosRevocados: revokedGrants,
+      },
+      req,
+    })
+      .catch(() => { /* audit best-effort */ })
+
     res.status(204).end()
   } catch (err) {
     next(err)
