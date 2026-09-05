@@ -1,10 +1,12 @@
 import type { Request, Response, NextFunction } from 'express'
-import type { PermissionCode, RoleAssignment } from '../../../../packages/shared-types/src'
+import type { PermissionCode, ResourceCapability, RoleAssignment } from '../../../../packages/shared-types/src'
+import type { ResourceTypeApi, ResourceTypeDb } from '../../../../packages/shared-types/src'
 import { PERMISSION_CODES } from '../../../../packages/shared-types/src'
 import type { AuthContext } from './auth'
 import { ForbiddenError, UnauthorizedError } from '../errors/AppError'
 import { getDbPool, sql } from '../db/pool'
 import { fetchRolesForUser } from '../../modules/users/users.service'
+import { hasCapabilityOnResource } from '../../modules/resource-permissions/resource-permissions.service'
 
 export const ORG_ADMIN_MAX_PRIORITY = 25
 
@@ -115,3 +117,26 @@ export function requireOrgAdmin(req: Request, _res: Response, next: NextFunction
 }
 
 export { loadUserRolesToAuth as ensureAuthWithRoles }
+
+export function requireResourcePermission(
+  resourceType: ResourceTypeApi | ResourceTypeDb,
+  capability: ResourceCapability,
+  getResourceId: (req: Request) => string = (req: Request) => String((req.params as any).id),
+  denyMessage?: string
+): (req: Request, res: Response, next: NextFunction) => void {
+  const msg = denyMessage ?? `No tienes permiso para: ${String(capability).toLowerCase()} sobre ${String(resourceType).toLowerCase()}`
+  return function (req: Request, _res: Response, next: NextFunction) {
+    ;(async () => {
+      try {
+        const full = await loadUserRolesToAuth(req)
+        const pool = await getDbPool()
+        const resourceId = getResourceId(req)
+        const ok = await hasCapabilityOnResource(pool, full, resourceType, resourceId, capability, { req })
+        if (ok) return next()
+        throw new ForbiddenError(msg)
+      } catch (err) {
+        next(err)
+      }
+    })()
+  }
+}

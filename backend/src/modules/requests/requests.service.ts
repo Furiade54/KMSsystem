@@ -3,6 +3,7 @@ import { getDbPool, sql } from '../../shared/db/pool'
 import { sqlLocalToIso } from '../../shared/utils/date'
 import { logAuditRecord } from '../../shared/db/audit'
 import { NotFoundError, ForbiddenError, ConflictError, AppError } from '../../shared/errors/AppError'
+import { syncGrantFromRequestApproval } from '../resource-permissions/resource-permissions.service'
 
 export type SolicitudEstado = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'
 export type TipoRecursoAcceso = 'proyecto' | 'carpeta' | 'archivo'
@@ -315,25 +316,16 @@ export async function resolveRequest(
 
   if (decision === 'APROBADO') {
     try {
-      const perm = opts?.permissionScope === 'full' ? 'full' : 'view'
-      const adminBit = perm === 'full' ? 1 : 0
-      const sets = perm === 'full'
-        ? 'PuedeVer=1, PuedeDescargar=1, PuedeComentar=1, PuedeEditar=1, PuedeCompartir=1, PuedeAdministrar=@adm'
-        : 'PuedeVer=1, PuedeDescargar=1, PuedeComentar=1, PuedeAdministrar=PuedeAdministrar'
-      const upd = await pool
-        .request()
-        .input('tr', sql.VarChar(20), current.resourceType)
-        .input('rid', sql.UniqueIdentifier, current.resourceId)
-        .input('uid', sql.UniqueIdentifier, current.requesterId)
-        .input('adm', sql.Bit, adminBit)
-        .query(`
-          IF EXISTS (SELECT 1 FROM PermisosRecurso WHERE TipoRecurso = @tr AND IdRecurso = @rid AND IdUsuario = @uid)
-            UPDATE PermisosRecurso SET ${sets} WHERE TipoRecurso = @tr AND IdRecurso = @rid AND IdUsuario = @uid
-          ELSE
-            INSERT INTO PermisosRecurso (TipoRecurso, IdRecurso, IdUsuario, PuedeVer, PuedeDescargar, PuedeComentar, PuedeEditar, PuedeCompartir, PuedeAdministrar)
-            VALUES (@tr, @rid, @uid, 1, 1, 1, ${perm === 'full' ? 1 : 0}, ${perm === 'full' ? 1 : 0}, ${adminBit})
-        `)
-      void upd
+      const scope: 'view' | 'full' = opts?.permissionScope === 'full' ? 'full' : 'view'
+      await syncGrantFromRequestApproval(
+        pool,
+        auth as any,
+        current.resourceType,
+        current.resourceId,
+        current.requesterId,
+        scope,
+        opts?.req ?? undefined
+      )
     } catch { /* ignore perms best-effort */ }
   }
 

@@ -127,7 +127,8 @@ BEGIN
         'archivos.subir',
         'archivos.editar',
         'comentarios.crear',
-        'favoritos.gestionar'
+        'favoritos.gestionar',
+        'recursos.permisos.ver'
     )
     AND NOT EXISTS (
         SELECT 1 FROM dbo.PermisosRol pr

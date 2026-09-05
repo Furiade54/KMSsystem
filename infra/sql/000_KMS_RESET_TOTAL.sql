@@ -1,29 +1,46 @@
 -- ============================================================================
 --  KMS - Knowledge Management System
 --  Script TOTAL de recreacion de base de datos (DROP + CREATE + schema + seed)
---  VERSION UNIFICADA v2 — incorpora todas las mejoras de:
+--  VERSION UNIFICADA v3.1 PRODUCCION — incorpora todas las mejoras de:
 --    * Mejoras usuarios / RBAC / trazabilidad (antiguo 002_KMS_MEJORAS_USUARIOS_SBD)
 --    * Favoritos con IdOrganizacion y PK compuesta
 --    * Tablas ActividadReciente y SolicitudesPendientes
---    * Catalogo semilla de Permisos (26) organizados por Nivel/Categoria
---  Destino: Microsoft SQL Server
+--    * Catalogo semilla de Permisos (28) organizados por Nivel/Categoria
+--      (incluye recursos.permisos.ver y recursos.permisos.editar)
+--    * Tabla PermisosRecurso con 14 cols (FechaCreacion / FechaActualizacion
+--      / IdConcedidoPor) + 1 IX compuesto + 2 UQ filtrados (grantee XOR)
+--  Destino: Microsoft SQL Server 2014 (COMPATIBILITY_LEVEL 120) — listo para PROD.
+--
+--  ⚠  ADVERTENCIA PARA PRODUCCION (LEER ANTES):
+--     1. ESTE SCRIPT ELIMINA LA BASE [KMS] SI EXISTE. Toma BACKUP FULL antes.
+--     2. Usuarios semilla tienen contras PUBLICAS documentadas: admin@kms.local /
+--        Admin123456 — carlos.perez@ejemplo.com / Admin123456. CAMBIA LOS
+--        PASSWORDS inmediatamente despues del reset (block POST-RESET al final).
+--     3. No crea LOGINS a nivel INSTANCIA (ej: 'pipe' o 'kms_app_pool').
+--        Debes crearlos tu y mapearlos a la BD con db_datareader + db_datawriter.
+--     4. Finaliza con RECOVERY FULL + PAGE_VERIFY CHECKSUM + COMPAT 120. Realiza
+--        BACKUP FULL INMEDIATO despues del reset para habilitar backups LOG.
 --
 --  USO:
---    1. Ejecutar en SSMS conectado a la instancia destino.
---    2. El script ELIMINA la base KMS si existe.
---    3. Crea la BD desde cero, crea tablas, FKs, indices y datos semilla.
+--    1. TOMAR BACKUP FULL DE BD ACTUAL (si existe) — obligatorio en prod).
+--    2. Ejecutar en SSMS conectado con login sysadmin a la instancia PROD.
+--    3. El script ELIMINA KMS (si existe), crea tablas, FK, IX y seed.
+--    4. NO es necesario correr migrations de infra/sql/migrations/ despues.
 --
---  IMPORTANTE:
+--  ORDEN DE MIGRATIONS (SOLO si se preserva BD actual, SIN reset):
+--    1) 20260903_fix_rbac_roles.sql
+--    2) 20260903b_patch_permisos_miembro.sql
+--    3) 20260903c_add_fechaactualizacion.sql
+--    4) 20260905_permisos_recurso.sql   ← ACL granular por recurso
+--
+--  IMPORTANTE (CASCADE PATHS):
 --    - FK_Archivo_Proyecto NO usa ON DELETE CASCADE a proposito.
 --    - SQL Server fallaria por MULTIPLE CASCADE PATHS:
 --         Proyectos -> Carpetas -> Archivos
 --         Proyectos -> Archivos
---    - Por eso la eliminacion permanente de proyectos debe borrar Archivos
---      manualmente antes de borrar Proyectos, y dejar que las demas tablas
---      hijas caigan por CASCADE donde si existe.
---    - Borrado permanente de Usuarios tambien requiere limpieza manual en
---      tablas con FK NO_ACTION (Proyectos, Carpetas, Archivos, Versiones,
---      Temas, Reuniones, Actas, Recursos, Revisiones, Compartidos).
+--    - Borrado permanente proyectos: borra Archivos manual ANTES de Proyectos,
+--      el resto de hijas caen por CASCADE.
+--    - Borrado permanente Usuarios requiere limpieza manual FK NO_ACTION.
 -- ============================================================================
 
 SET NOCOUNT ON;
@@ -40,13 +57,57 @@ BEGIN
 END
 GO
 
-CREATE DATABASE KMS;
+-------------------------------------------------------------------------------
+--  CREATE DATABASE — configuracion PRODUCCION optimizada para SQL 2014
+-------------------------------------------------------------------------------
+CREATE DATABASE KMS
+ COLLATE Modern_Spanish_CI_AS
+ ON PRIMARY
+( NAME = N'KMS_Data',
+  FILENAME = N'C:\Program Files\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQL\DATA\KMS.mdf',
+  SIZE = 256 MB,
+  MAXSIZE = UNLIMITED,
+  FILEGROWTH = 64 MB
+)
+ LOG ON
+( NAME = N'KMS_Log',
+  FILENAME = N'C:\Program Files\Microsoft SQL Server\MSSQL12.MSSQLSERVER\MSSQL\DATA\KMS_log.ldf',
+  SIZE = 64 MB,
+  MAXSIZE = UNLIMITED,
+  FILEGROWTH = 32 MB
+);
+GO
+PRINT 'Base de datos [KMS] creada (Collate Modern_Spanish_CI_AS, Data 256MB, Log 64MB).';
 GO
 
-ALTER DATABASE KMS SET RECOVERY SIMPLE;
+-- Nivel compatibilidad 120 = SQL Server 2014 (portable aunque engine sea superior)
+ALTER DATABASE KMS SET COMPATIBILITY_LEVEL = 120;
+GO
+
+-- Recuperacion FULL (obligatorio para point-in-time / backups LOG).
+-- Entorno STAGING: cambiar a SIMPLE manualmente DESPUES del reset si lo deseas.
+ALTER DATABASE KMS SET RECOVERY FULL;
+GO
+
+-- Detecta corrupcion en paginas de disco ANTES de propagarla en backup/reads.
+ALTER DATABASE KMS SET PAGE_VERIFY CHECKSUM;
+GO
+
+-- Apagamos stats auto DURANTE el seed para evitar sampleos sesgados; lo
+-- re-encendemos en el block POST-RESET al final del script.
+ALTER DATABASE KMS SET AUTO_CREATE_STATISTICS OFF;
+ALTER DATABASE KMS SET AUTO_UPDATE_STATISTICS OFF;
 GO
 
 USE KMS;
+GO
+
+-- Seed en modo RESTRICTED: solo sysadmins y db_owner pueden conectarse
+-- durante la carga. Evita que el app pool se conecte a medias y cause
+-- deadlocks / datos semilla parciales.
+ALTER DATABASE KMS SET RESTRICTED_USER WITH ROLLBACK IMMEDIATE;
+GO
+PRINT 'Modo RESTRICTED_USER activado. Iniciando carga de tablas + seed.';
 GO
 
 -- ============================================================
@@ -486,11 +547,31 @@ CREATE TABLE dbo.PermisosRecurso (
     PuedeEditar BIT NOT NULL CONSTRAINT DF_PermisosRecurso_PuedeEditar DEFAULT 0,
     PuedeCompartir BIT NOT NULL CONSTRAINT DF_PermisosRecurso_PuedeCompartir DEFAULT 0,
     PuedeAdministrar BIT NOT NULL CONSTRAINT DF_PermisosRecurso_PuedeAdministrar DEFAULT 0,
+    FechaCreacion DATETIME NOT NULL CONSTRAINT DF_PermisosRecurso_FechaCreacion DEFAULT GETDATE(),
+    FechaActualizacion DATETIME NULL,
+    IdConcedidoPor UNIQUEIDENTIFIER NULL,
     CONSTRAINT FK_PermisoRecurso_Usuario
         FOREIGN KEY (IdUsuario) REFERENCES dbo.Usuarios(Id) ON DELETE CASCADE,
     CONSTRAINT FK_PermisoRecurso_Rol
-        FOREIGN KEY (IdRol) REFERENCES dbo.Roles(Id)
+        FOREIGN KEY (IdRol) REFERENCES dbo.Roles(Id),
+    CONSTRAINT FK_PermisoRecurso_ConcedidoPor
+        FOREIGN KEY (IdConcedidoPor) REFERENCES dbo.Usuarios(Id)
 );
+GO
+
+CREATE INDEX IX_PermisosRecurso_Resource
+    ON dbo.PermisosRecurso(IdRecurso, TipoRecurso, IdUsuario, IdRol)
+    INCLUDE (PuedeVer, PuedeDescargar, PuedeComentar, PuedeEditar, PuedeCompartir, PuedeAdministrar);
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX UQ_PermisosRecurso_Grantee_User
+    ON dbo.PermisosRecurso(TipoRecurso, IdRecurso, IdUsuario)
+    WHERE IdUsuario IS NOT NULL;
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX UQ_PermisosRecurso_Grantee_Rol
+    ON dbo.PermisosRecurso(TipoRecurso, IdRecurso, IdRol)
+    WHERE IdRol IS NOT NULL;
 GO
 
 CREATE TABLE dbo.Compartidos (
@@ -850,7 +931,9 @@ VALUES
 ('revisiones.asignar',           N'Asignar revisiones a pares del proyecto',                      'PROYECTO',     N'Revisiones'),
 ('revisiones.ver',               N'Ver revisiones asignadas y del proyecto',                      'PROYECTO',     N'Revisiones'),
 ('auditoria.ver',                N'Ver los registros de auditoria de la organizacion',            'SISTEMA',      N'Auditoria'),
-('solicitudes.gestionar',        N'Aprobar/rechazar solicitudes de acceso a recursos',             'ORGANIZACION', N'Solicitudes');
+('solicitudes.gestionar',        N'Aprobar/rechazar solicitudes de acceso a recursos',             'ORGANIZACION', N'Solicitudes'),
+('recursos.permisos.ver',        N'Ver el listado de permisos ACL de un recurso concreto',        'RECURSO',      N'PermisosRecurso'),
+('recursos.permisos.editar',     N'Crear, editar y revocar permisos ACL en recursos',             'RECURSO',      N'PermisosRecurso');
 GO
 
 -- =============================================================================
@@ -863,14 +946,14 @@ DECLARE @IdOrganizacion UNIQUEIDENTIFIER = '11111111-1111-1111-1111-111111111111
 DECLARE @IdRolAdmin     UNIQUEIDENTIFIER = '33333333-3333-3333-3333-333333333333';
 DECLARE @IdRolMiembro   UNIQUEIDENTIFIER = '44444444-4444-4444-4444-444444444444';
 
--- ADMINISTRADOR = TODOS LOS 26 PERMISOS
+-- ADMINISTRADOR = TODOS LOS 28 PERMISOS
 INSERT INTO dbo.PermisosRol (IdRol, IdPermiso)
 SELECT @IdRolAdmin, p.Id FROM dbo.Permisos p
 WHERE NOT EXISTS (
   SELECT 1 FROM dbo.PermisosRol pr WHERE pr.IdRol = @IdRolAdmin AND pr.IdPermiso = p.Id
 );
 
--- MIEMBRO = 9 permisos de la matriz aprobada
+-- MIEMBRO = 10 permisos de la matriz aprobada (incluye ver permisos de recursos)
 INSERT INTO dbo.PermisosRol (IdRol, IdPermiso)
 SELECT @IdRolMiembro, p.Id FROM dbo.Permisos p
 WHERE p.Codigo IN (
@@ -882,7 +965,8 @@ WHERE p.Codigo IN (
     'archivos.subir',
     'archivos.editar',
     'comentarios.crear',
-    'favoritos.gestionar'
+    'favoritos.gestionar',
+    'recursos.permisos.ver'
 )
 AND NOT EXISTS (
   SELECT 1 FROM dbo.PermisosRol pr WHERE pr.IdRol = @IdRolMiembro AND pr.IdPermiso = p.Id
@@ -901,21 +985,21 @@ GO
 PRINT '==============================================';
 PRINT 'KMS recreado correctamente.';
 PRINT 'Base de datos: KMS';
-PRINT 'VERSION: Unificada v3 (incorpora 002 Mejoras Usuarios + Favoritos + ' +
+PRINT 'VERSION: Unificada v3.1 PRODUCCION (incorpora 002 Mejoras Usuarios + Favoritos + ' +
       'Tablas ActividadReciente / SolicitudesPendientes + RBAC por ' +
-      'codigo 26 permisos / PermisosRol 35 filas + Revisiones.FechaActualizacion';
+      'codigo 28 permisos / PermisosRol / PermisosRecurso 14 cols + IX + UQ XOR)';
 PRINT '';
-PRINT 'Usuarios semilla:';
+PRINT 'Usuarios semilla (PRODUCCION: CAMBIA SUS PASSWORDS INMEDIATAMENTE):';
 PRINT '  1) Administrador  — admin@kms.local          / Admin123456 (Rol: Administrador)  NivelPrioridad 10 = isOrgAdmin';
 PRINT '  2) Ana María López — ana@kms.local            / Admin123456 (Rol: Miembro)';
 PRINT '  3) Carlos Pérez    — carlos.perez@ejemplo.com / Admin123456 (Rol: Miembro)';
 PRINT '  4) Usuario ASD     — asd@kms.local            / Admin123456 (Rol: Miembro)';
 PRINT '';
 PRINT 'Matriz permisos por rol (seed):';
-PRINT '  • Administrador = 26 permisos (catalogo completo) — isOrgAdmin=true';
-PRINT '  • Miembro       =  9 permisos (org.ver, proyectos.ver/crear, revisiones.ver,';
+PRINT '  • Administrador = 28 permisos (catalogo completo) — isOrgAdmin=true';
+PRINT '  • Miembro       = 10 permisos (org.ver, proyectos.ver/crear, revisiones.ver,';
 PRINT '                                   archivos.ver/subir/editar, comentarios.crear,';
-PRINT '                                   favoritos.gestionar)';
+PRINT '                                   favoritos.gestionar, recursos.permisos.ver)';
 PRINT '';
 PRINT 'NUEVOS ENDPOINTS RBAC DISPONIBLES (HTTP):';
 PRINT '  • /api/organizacion (GET org.ver / PATCH org.editar)';
@@ -923,5 +1007,127 @@ PRINT '  • /api/roles (CRUD roles.ver / roles.crear / roles.asignar permisos)'
 PRINT '  • /api/revisiones (revisiones.ver / revisiones.asignar)';
 PRINT '  • /api/compartidos (archivos.compartir / public/:token)';
 PRINT '  • /api/archivos/:id/comentarios/:cid PATCH/DELETE (comentarios.gestionar)';
+PRINT '  • /api/permisos-recurso (CRUD ACL granular por recurso + 3x /:id/permisos en proyectos/carpetas/archivos)';
 PRINT '==============================================';
+GO
+
+-------------------------------------------------------------------------------
+--  POST-RESET PRODUCCION — PASOS OBLIGATORIOS ANTES DE PONER EN PRODUCCION
+-------------------------------------------------------------------------------
+--  ╔══════════════════════════════════════════════════════════════════════╗
+--  ║  EJECUTA TODO ESTE BLOQUE EN PRODUCCION DESPUES DEL MENSAJE DE OK.  ║
+--  ║  Las instrucciones marcadas "/* ENABLE IN PROD */" debes DESCOMENTAR║
+--  ║  y adaptar con tus credenciales reales (nunca dejar Admin123456).   ║
+--  ╚══════════════════════════════════════════════════════════════════════╝
+
+USE KMS;
+GO
+
+-- 1) Re-encender estadisticas auto (optimizador de consultas)
+ALTER DATABASE KMS SET AUTO_CREATE_STATISTICS ON;
+ALTER DATABASE KMS SET AUTO_UPDATE_STATISTICS ON;
+ALTER DATABASE KMS SET AUTO_UPDATE_STATISTICS_ASYNC ON;
+GO
+-- 2) AUTO_SHRINK OFF (nunca en produccion, causa fragmentacion)
+ALTER DATABASE KMS SET AUTO_SHRINK OFF;
+GO
+
+-- 3) Integridad fisica completa + chequeo checksum de todas las paginas.
+DBCC CHECKDB (N'KMS') WITH ALL_ERRORMSGS, EXTENDED_LOGICAL_CHECKS, DATA_PURITY, NO_INFOMSGS;
+GO
+
+-- 4) Volver la base a modo MULTI_USER para que el app pool IIS / conexiones entren.
+ALTER DATABASE KMS SET MULTI_USER WITH ROLLBACK IMMEDIATE;
+GO
+PRINT 'Base [KMS] — MULTI_USER. Aplicaciones pueden conectarse.';
+GO
+
+-------------------------------------------------------------------------------
+--  5) CAMBIAR CONTRASEÑAS SEMILLA (BLOQUE DESCOMENTAR EN PROD)
+--     Reemplaza <HASH_BCRYPT_ADMIN_$2b$12$...> por un bcrypt generado desde:
+--     backend:  (await bcrypt.hash('TU_PASSWORD_REAL', 12))
+--     o via script npm/powershell bcrypt-cli. NUNCA uses Admin123456.
+-------------------------------------------------------------------------------
+/* ENABLE IN PROD
+UPDATE dbo.Usuarios SET
+    PasswordHash = '<HASH_BCRYPT_ADMIN_$2b$12$xxxxxx>',
+    FechaActualizacion = GETDATE()
+WHERE Correo = N'admin@kms.local';
+
+UPDATE dbo.Usuarios SET
+    PasswordHash = '<HASH_BCRYPT_ANA>',
+    FechaActualizacion = GETDATE()
+WHERE Correo = N'ana@kms.local';
+
+UPDATE dbo.Usuarios SET
+    PasswordHash = '<HASH_BCRYPT_CARLOS>',
+    FechaActualizacion = GETDATE()
+WHERE Correo = N'carlos.perez@ejemplo.com';
+
+-- (Opcional) Eliminar los usuarios demo que NO vas a usar en prod:
+-- DELETE FROM dbo.Usuarios WHERE Correo IN (N'asd@kms.local', N'carlos.perez@ejemplo.com');
+GO
+*/
+
+-------------------------------------------------------------------------------
+--  6) CREAR LOGIN DE SERVICIO A NIVEL INSTANCIA Y MAPEAR A [KMS]
+--     Usa un login de DOMINIO (IIS APPPOOL\KMSAppPool o DOMINIO\svc_kms) o
+--     SQL autenticación 'kms_app' con password fuerte en Azure Key Vault.
+-------------------------------------------------------------------------------
+/* ENABLE IN PROD
+USE master;
+GO
+-- 6a) Si usas SQL Authentication:
+IF NOT EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = N'kms_app')
+BEGIN
+    CREATE LOGIN [kms_app] WITH PASSWORD = N'<TU_PASSWORD_FUERTE_AQUI>',
+         DEFAULT_DATABASE = [KMS],
+         DEFAULT_LANGUAGE = [Español],
+         CHECK_EXPIRATION = ON,
+         CHECK_POLICY   = ON;
+END
+GO
+-- 6b) Mapear login a usuario de BD y asignar roles de servicio (NO db_owner):
+USE KMS;
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'kms_app')
+BEGIN
+    CREATE USER [kms_app] FOR LOGIN [kms_app];
+END
+GO
+ALTER ROLE db_datareader ADD MEMBER [kms_app];
+ALTER ROLE db_datawriter ADD MEMBER [kms_app];
+ALTER ROLE db_ddladmin  ADD MEMBER [kms_app];   -- solo si necesitas ALTER TABLE en deployments futuros (sino quitar)
+GO
+*/
+
+-------------------------------------------------------------------------------
+--  7) BACKUP FULL OBLIGATORIO para habilitar cadena LOG.
+--     Agrega tu ruta de backups compartido (ej: \\bkpsrv\sqlbkps\PROD\).
+-------------------------------------------------------------------------------
+/* ENABLE IN PROD
+USE master;
+GO
+BACKUP DATABASE [KMS]
+ TO DISK = N'\\bkpsrv\sqlbkps\PROD\KMS\FULL\KMS_FULL_<YYYYMMDD_HHMM>.bak'
+ WITH COMPRESSION, CHECKSUM, FORMAT, MEDIANAME = N'KMS_PROD_FULL',
+      DESCRIPTION = N'Reset inicial KMS v3.1 - primer backup FULL post-creacion',
+      STATS = 5;
+GO
+BACKUP LOG [KMS]
+ TO DISK = N'\\bkpsrv\sqlbkps\PROD\KMS\LOG\KMS_LOG_<YYYYMMDD_HHMM>.trn'
+ WITH COMPRESSION, CHECKSUM, FORMAT, STATS = 5;
+GO
+*/
+
+PRINT '';
+PRINT '================================================================';
+PRINT '  POST-RESET PRODUCCION: checklist 7 pasos aplicado (salvo los';
+PRINT '  bloques ENABLE IN PROD que debes DESCOMENTAR manualmente).';
+PRINT '  Si todo ok:       • dbcc checkdb sin errores';
+PRINT '                    • login servicio creado y asignado roles';
+PRINT '                    • passwords semilla cambiados';
+PRINT '                    • backup FULL hecho + backup LOG 1er tail';
+PRINT '  KMS lista para PRODUCCION.';
+PRINT '================================================================';
 GO

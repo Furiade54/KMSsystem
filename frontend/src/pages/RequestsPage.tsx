@@ -17,15 +17,16 @@ import {
 import { formatRelativeTime } from '../services/projects.service'
 import {
   ArrowRightLeft,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Eye,
   FileText,
   Folder,
   FolderKanban,
   Inbox,
   Loader2,
   Search,
+  ShieldCheck,
   XCircle,
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
@@ -101,8 +102,16 @@ export default function RequestsPage() {
     })
   }, [items, search])
 
-  const approveMut = useMutation({
+  const approveViewMut = useMutation({
     mutationFn: (id: string) => approveRequest(id, { permissionScope: 'view' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: listKey })
+      void qc.invalidateQueries({ queryKey: countKey })
+      void qc.invalidateQueries({ queryKey: ['activity'] })
+    },
+  })
+  const approveFullMut = useMutation({
+    mutationFn: (id: string) => approveRequest(id, { permissionScope: 'full' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: listKey })
       void qc.invalidateQueries({ queryKey: countKey })
@@ -315,27 +324,41 @@ export default function RequestsPage() {
                   {canResolve ? (
                     <>
                       <button
-                        className="btn-secondary text-xs sm:text-sm py-1 sm:py-1.5 whitespace-nowrap hover:bg-status-approved/10 hover:text-status-approved focus-visible:ring-status-approved/50"
-                        disabled={approveMut.isPending || rejectMut.isPending}
-                        onClick={() => void approveMut.mutate(r.id)}
-                        title="Aprobar solicitud (permisos de lectura, descarga y comentario)"
-                      >
-                        {approveMut.variables === r.id && approveMut.isPending
-                          ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <CheckCircle2 className="w-4 h-4" />}
-                        <span className="hidden sm:inline">Aprobar</span>
-                      </button>
-                      <button
-                        className="btn-secondary text-xs sm:text-sm py-1 sm:py-1.5 whitespace-nowrap hover:bg-status-blocked/10 hover:text-status-blocked focus-visible:ring-status-blocked/50"
-                        disabled={approveMut.isPending || rejectMut.isPending}
-                        onClick={() => void rejectMut.mutate(r.id)}
-                        title="Rechazar solicitud"
-                      >
-                        {rejectMut.variables === r.id && rejectMut.isPending
-                          ? <Loader2 className="w-4 h-4 animate-spin" />
-                          : <XCircle className="w-4 h-4" />}
-                        <span className="hidden sm:inline">Rechazar</span>
-                      </button>
+              className="btn-secondary text-xs sm:text-sm py-1 sm:py-1.5 whitespace-nowrap hover:bg-status-approved/10 hover:text-status-approved focus-visible:ring-status-approved/50 disabled:opacity-50"
+              disabled={approveViewMut.isPending || approveFullMut.isPending || rejectMut.isPending}
+              onClick={() => void approveViewMut.mutate(r.id)}
+              title="Aprobar en modo lectura: permite ver, descargar y comentar el recurso."
+            >
+              {approveViewMut.variables === r.id && approveViewMut.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Eye className="w-4 h-4" />}
+              <span className="hidden sm:inline">Aprobar (solo ver)</span>
+              <span className="sm:hidden">Ver</span>
+            </button>
+            <button
+              className="btn-primary text-xs sm:text-sm py-1 sm:py-1.5 whitespace-nowrap disabled:opacity-50"
+              disabled={approveViewMut.isPending || approveFullMut.isPending || rejectMut.isPending}
+              onClick={() => void approveFullMut.mutate(r.id)}
+              title="Aprobar con control total: el usuario puede editar, compartir y administrar completamente el recurso."
+            >
+              {approveFullMut.variables === r.id && approveFullMut.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <ShieldCheck className="w-4 h-4" />}
+              <span className="hidden sm:inline">Aprobar (total)</span>
+              <span className="sm:hidden">Admin</span>
+            </button>
+            <button
+              className="btn-secondary text-xs sm:text-sm py-1 sm:py-1.5 whitespace-nowrap hover:bg-status-blocked/10 hover:text-status-blocked focus-visible:ring-status-blocked/50 disabled:opacity-50"
+              disabled={approveViewMut.isPending || approveFullMut.isPending || rejectMut.isPending}
+              onClick={() => void rejectMut.mutate(r.id)}
+              title="Rechazar solicitud"
+            >
+              {rejectMut.variables === r.id && rejectMut.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <XCircle className="w-4 h-4" />}
+              <span className="hidden sm:inline">Rechazar</span>
+              <span className="sm:hidden">No</span>
+            </button>
                     </>
                   ) : (
                     <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap shrink-0">
@@ -362,7 +385,7 @@ export default function RequestsPage() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               className="btn-secondary text-sm py-1.5 disabled:opacity-50 whitespace-nowrap"
-              disabled={page <= 1 || listQuery.isFetching || approveMut.isPending || rejectMut.isPending || requestMut.isPending}
+              disabled={page <= 1 || listQuery.isFetching || approveViewMut.isPending || approveFullMut.isPending || rejectMut.isPending || requestMut.isPending}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
               <ChevronLeft className="w-4 h-4" />
@@ -370,7 +393,7 @@ export default function RequestsPage() {
             </button>
             <button
               className="btn-secondary text-sm py-1.5 disabled:opacity-50 whitespace-nowrap"
-              disabled={page >= totalPages || listQuery.isFetching || approveMut.isPending || rejectMut.isPending || requestMut.isPending}
+              disabled={page >= totalPages || listQuery.isFetching || approveViewMut.isPending || approveFullMut.isPending || rejectMut.isPending || requestMut.isPending}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
               Siguiente

@@ -3,6 +3,7 @@ import { getDbPool, sql } from '../../shared/db/pool'
 import { ensureAuditAndCommentTables, logAuditRecord } from '../../shared/db/audit'
 import { AppError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
 import { getStorageProvider } from '../../shared/storage'
+import { cleanupAllGrantsForProjectTree } from '../resource-permissions/resource-permissions.service'
 
 type ProjectAuth = {
   organizationId: string
@@ -45,6 +46,7 @@ export async function permanentlyDeleteProject(
   const storage = getStorageProvider()
   let projectName = ''
   let storageKeys: string[] = []
+  let deletedGrants = 0
 
   try {
     await tx.begin()
@@ -82,6 +84,8 @@ export async function permanentlyDeleteProject(
       WHERE IdProyecto = @projectId
     `)
     storageKeys = filesRes.recordset.map((row) => row.StorageKey || buildFallbackStorageKey(row))
+
+    deletedGrants = await cleanupAllGrantsForProjectTree(tx, projectId)
 
     const delReq = tx.request()
     delReq.input('projectId', sql.UniqueIdentifier, projectId)
@@ -179,7 +183,7 @@ export async function permanentlyDeleteProject(
     resourceType: 'project',
     resourceId: projectId,
     resourceName: projectName || null,
-    extra: { deletedFilesCount: storageKeys.length },
+    extra: { deletedFilesCount: storageKeys.length, deletedGrantsCount: deletedGrants },
     req: req ?? null,
   })
 }

@@ -112,6 +112,87 @@ export interface UpdateOrganizationDto {
   status?: EntityStatus
 }
 
+export type ResourceCapability =
+  | 'VER'
+  | 'DESCARGAR'
+  | 'COMENTAR'
+  | 'EDITAR'
+  | 'COMPARTIR'
+  | 'ADMINISTRAR'
+
+export type ResourceTypeDb = 'proyecto' | 'carpeta' | 'archivo'
+export type ResourceTypeApi = 'PROJECT' | 'FOLDER' | 'FILE'
+
+export const RESOURCE_TYPE_DB_TO_API: Record<ResourceTypeDb, ResourceTypeApi> = {
+  proyecto: 'PROJECT',
+  carpeta: 'FOLDER',
+  archivo: 'FILE',
+}
+
+export const RESOURCE_TYPE_API_TO_DB: Record<ResourceTypeApi, ResourceTypeDb> = {
+  PROJECT: 'proyecto',
+  FOLDER: 'carpeta',
+  FILE: 'archivo',
+}
+
+export const RESOURCE_CAPABILITY_TO_COLUMN: Record<ResourceCapability, string> = {
+  VER: 'PuedeVer',
+  DESCARGAR: 'PuedeDescargar',
+  COMENTAR: 'PuedeComentar',
+  EDITAR: 'PuedeEditar',
+  COMPARTIR: 'PuedeCompartir',
+  ADMINISTRAR: 'PuedeAdministrar',
+}
+
+export interface ResourcePermissionGrant {
+  id: string
+  resourceType: ResourceTypeApi
+  resourceId: string
+  userId?: string | null
+  userName?: string | null
+  userEmail?: string | null
+  roleId?: string | null
+  roleName?: string | null
+  puedeVer: boolean
+  puedeDescargar: boolean
+  puedeComentar: boolean
+  puedeEditar: boolean
+  puedeCompartir: boolean
+  puedeAdministrar: boolean
+  createdAt: string
+  grantedByUserId?: string | null
+  grantedByUserName?: string | null
+}
+
+export type ResourceGrantee =
+  | { userId: string; roleId?: null | undefined }
+  | { roleId: string; userId?: null | undefined }
+
+export type CreateResourcePermissionDto = ResourceGrantee & {
+  puedeVer: boolean
+  puedeDescargar?: boolean
+  puedeComentar?: boolean
+  puedeEditar?: boolean
+  puedeCompartir?: boolean
+  puedeAdministrar?: boolean
+}
+
+export type UpdateResourcePermissionDto = {
+  puedeVer?: boolean
+  puedeDescargar?: boolean
+  puedeComentar?: boolean
+  puedeEditar?: boolean
+  puedeCompartir?: boolean
+  puedeAdministrar?: boolean
+}
+
+export interface ListResourcePermissionsParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  scope?: 'all' | 'users' | 'roles'
+}
+
 export interface Permission {
   id: string
   code: PermissionCode
@@ -149,6 +230,8 @@ export type PermissionCode =
   | 'auditoria.ver'
   | 'revisiones.asignar'
   | 'revisiones.ver'
+  | 'recursos.permisos.ver'
+  | 'recursos.permisos.editar'
 
 export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
   'org.ver',
@@ -181,6 +264,8 @@ export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionC
   'auditoria.ver',
   'revisiones.asignar',
   'revisiones.ver',
+  'recursos.permisos.ver',
+  'recursos.permisos.editar',
 ])
 
 // --- Trabajo colaborativo ---
