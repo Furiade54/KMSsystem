@@ -9,12 +9,30 @@ export interface ApiProject {
   description: string
   status: ApiProjectStatus
   ownerId: string | null
+  docMaestroCarpetaId?: string | null
+  docMaestroArchivoId?: string | null
   createdAt: string
   updatedAt: string | null
   color: string
   progress: number
   membersCount: number
   filesCount: number
+}
+
+export interface ProjectMasterDocInfo {
+  resourceType: 'FOLDER' | 'FILE'
+  resourceId: string
+  name: string
+  path: string
+  size?: number | null
+  lastUpdatedAt?: string | null
+  ownerId?: string | null
+  ownerName?: string | null
+}
+
+export interface DesignateMasterDocPayload {
+  resourceType: 'FOLDER' | 'FILE'
+  resourceId: string
 }
 
 export interface PaginatedData<T> {
@@ -121,6 +139,7 @@ export interface ProjectStats {
 export interface ProjectDetail {
   project: ApiProject
   stats: ProjectStats
+  documentoMaestro: ProjectMasterDocInfo | null
 }
 
 export async function getProjectById(id: string) {
@@ -201,6 +220,40 @@ export async function permanentlyDeleteProject(id: string) {
       err?.response?.data?.message ||
         err?.message ||
         'No se pudo eliminar permanentemente el proyecto'
+    )
+  }
+}
+
+export async function designateProjectMaster(projectId: string, payload: DesignateMasterDocPayload) {
+  try {
+    const res = await api.patch<ApiResponse<{ documentoMaestro: ProjectMasterDocInfo | null }>>(
+      `/projects/${projectId}/documento-maestro`,
+      payload
+    )
+    if (!res.data?.success) {
+      throw new Error(res.data?.message || 'No se pudo designar el documento maestro')
+    }
+    return res.data.data
+  } catch (err: any) {
+    throw new Error(
+      err?.response?.data?.message ||
+        err?.message ||
+        'No se pudo designar el documento maestro'
+    )
+  }
+}
+
+export async function clearProjectMaster(projectId: string) {
+  try {
+    const res = await api.delete(`/projects/${projectId}/documento-maestro`)
+    if (res.status !== 204) {
+      throw new Error('No se pudo quitar el documento maestro')
+    }
+  } catch (err: any) {
+    throw new Error(
+      err?.response?.data?.message ||
+        err?.message ||
+        'No se pudo quitar el documento maestro'
     )
   }
 }

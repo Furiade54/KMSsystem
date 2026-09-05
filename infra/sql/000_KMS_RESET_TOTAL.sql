@@ -257,6 +257,8 @@ CREATE TABLE dbo.Proyectos (
     Descripcion NVARCHAR(MAX) NULL,
     Estado VARCHAR(30) NOT NULL CONSTRAINT DF_Proyectos_Estado DEFAULT 'ACTIVO',
     IdPropietario UNIQUEIDENTIFIER NULL,
+    IdDocMaestroCarpeta UNIQUEIDENTIFIER NULL,
+    IdDocMaestroArchivo UNIQUEIDENTIFIER NULL,
     Color NVARCHAR(30) NOT NULL CONSTRAINT DF_Proyectos_Color DEFAULT 'indigo',
     ProgresoPorcentaje TINYINT NOT NULL CONSTRAINT DF_Proyectos_Progreso DEFAULT 0,
     FechaCreacion DATETIME2 NOT NULL CONSTRAINT DF_Proyectos_FechaCreacion DEFAULT GETDATE(),
@@ -265,8 +267,17 @@ CREATE TABLE dbo.Proyectos (
         FOREIGN KEY (IdOrganizacion) REFERENCES dbo.Organizaciones(Id) ON DELETE CASCADE,
     CONSTRAINT FK_Proyecto_Propietario
         FOREIGN KEY (IdPropietario) REFERENCES dbo.Usuarios(Id),
+    CONSTRAINT FK_Proyectos_DocMaestroCarpeta
+        FOREIGN KEY (IdDocMaestroCarpeta) REFERENCES dbo.Carpetas(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_Proyectos_DocMaestroArchivo
+        FOREIGN KEY (IdDocMaestroArchivo) REFERENCES dbo.Archivos(Id) ON DELETE SET NULL,
     CONSTRAINT CK_Proyectos_Estado
-        CHECK (Estado IN ('ACTIVO','PENDIENTE','COMPLETADO','INACTIVO','ARCHIVADO','ELIMINADO'))
+        CHECK (Estado IN ('ACTIVO','PENDIENTE','COMPLETADO','INACTIVO','ARCHIVADO','ELIMINADO')),
+    CONSTRAINT CK_Proyectos_DocMaestro_Xor
+        CHECK (
+            CASE WHEN IdDocMaestroCarpeta IS NOT NULL THEN 1 ELSE 0 END
+          + CASE WHEN IdDocMaestroArchivo IS NOT NULL THEN 1 ELSE 0 END <= 1
+        )
 );
 GO
 
@@ -278,6 +289,16 @@ GO
 CREATE INDEX IX_Proyectos_IdPropietario
     ON dbo.Proyectos(IdPropietario, Estado)
     INCLUDE (IdOrganizacion, Nombre);
+GO
+
+CREATE NONCLUSTERED INDEX IX_Proyectos_IdDocMaestroCarpeta
+    ON dbo.Proyectos(IdDocMaestroCarpeta)
+    INCLUDE (IdOrganizacion, Nombre, Estado);
+GO
+
+CREATE NONCLUSTERED INDEX IX_Proyectos_IdDocMaestroArchivo
+    ON dbo.Proyectos(IdDocMaestroArchivo)
+    INCLUDE (IdOrganizacion, Nombre, Estado);
 GO
 
 CREATE TABLE dbo.MiembrosProyecto (

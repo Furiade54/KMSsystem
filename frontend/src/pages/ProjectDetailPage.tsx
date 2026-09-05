@@ -60,8 +60,12 @@ import {
   removeProjectMember,
   updateProjectMemberRole,
   fetchOrganizationMembers,
+  designateProjectMaster,
+  clearProjectMaster,
   type OrgMember,
   type ProjectMember,
+  type ProjectMasterDocInfo,
+  type DesignateMasterDocPayload,
 } from '../services/projects.service'
 import {
   type FavoriteState,
@@ -167,6 +171,75 @@ function initials(fullName: string | null): string {
   return parts.map((p) => p.charAt(0).toUpperCase()).join('') || '?'
 }
 
+function MasterFolderTreeItem({
+  node,
+  depth,
+  selectedFolderId,
+  onSelect,
+}: {
+  node: FolderNode
+  depth: number
+  selectedFolderId: string | null
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(true)
+  const hasChildren = node.children && node.children.length > 0
+  const sel = selectedFolderId === node.id
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onSelect(node.id)}
+        className={clsx(
+          'w-full flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-left transition-colors',
+          sel ? 'bg-brand-600/15 ring-1 ring-brand-500/60 text-foreground' : 'text-foreground hover:bg-surface-secondary'
+        )}
+        style={{ paddingLeft: `${12 + depth * 14}px` }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen((v) => !v)
+            }}
+            className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/5 shrink-0 -ml-1"
+            aria-label={open ? 'Colapsar' : 'Expandir'}
+          >
+            {open ? (
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+            )}
+          </button>
+        ) : (
+          <span className="w-[18px] shrink-0" aria-hidden="true" />
+        )}
+        {open && hasChildren ? (
+          <FolderOpen className="w-4 h-4 text-status-review shrink-0" />
+        ) : (
+          <Folder className="w-4 h-4 text-status-review shrink-0" />
+        )}
+        <span className="truncate flex-1 min-w-0">{node.name}</span>
+        {sel && (
+          <Check className="w-4 h-4 ml-1 text-brand-600 dark:text-brand-300 shrink-0" />
+        )}
+      </button>
+      {open && hasChildren
+        ? node.children.map((c) => (
+            <MasterFolderTreeItem
+              key={c.id}
+              node={c}
+              depth={depth + 1}
+              selectedFolderId={selectedFolderId}
+              onSelect={onSelect}
+            />
+          ))
+        : null}
+    </div>
+  )
+}
+
 function ProjectDetailPage() {
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
@@ -208,6 +281,11 @@ function ProjectDetailPage() {
     title: string
     message: string
   } | null>(null)
+  const [showMasterSelector, setShowMasterSelector] = useState(false)
+  const [masterSelectorTab, setMasterSelectorTab] = useState<'folders' | 'files'>('folders')
+  const [masterSelectedFolderId, setMasterSelectedFolderId] = useState<string | null>(null)
+  const [masterSelectedFileId, setMasterSelectedFileId] = useState<string | null>(null)
+  const [showConfirmClearMaster, setShowConfirmClearMaster] = useState(false)
   const TREE_MIN_W = 180
   const TREE_MAX_W = 420
 
@@ -452,6 +530,66 @@ function ProjectDetailPage() {
     if (!authUser?.id) return false
     return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
   }, [project, authUser])
+
+  const canAdminMaster = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const designateMasterMutation = useMutation({
+    mutationFn: (payload: DesignateMasterDocPayload) => designateProjectMaster(projectId, payload),
+    onSuccess: () => {
+      invalidateDetail()
+      setShowMasterSelector(false)
+      setMasterSelectedFolderId(null)
+      setMasterSelectedFileId(null)
+      setPageToast({
+        kind: 'success',
+        title: 'Documento maestro actualizado',
+        message: 'Se designó correctamente el nuevo documento o carpeta maestra del proyecto.',
+      })
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Error desconocido'
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo designar',
+        message: msg,
+      })
+    },
+  })
+
+  const clearMasterMutation = useMutation({
+    mutationFn: () => clearProjectMaster(projectId),
+    onSuccess: () => {
+      invalidateDetail()
+      setShowConfirmClearMaster(false)
+      setPageToast({
+        kind: 'success',
+        title: 'Documento maestro quitado',
+        message: 'El proyecto ya no tiene un documento designado como maestro.',
+      })
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Error desconocido'
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo quitar',
+        message: msg,
+      })
+    },
+  })
+
+  const handleMasterDesignateSubmit = () => {
+    const rid = masterSelectorTab === 'folders' ? masterSelectedFolderId : masterSelectedFileId
+    if (!rid) return
+    const payload: DesignateMasterDocPayload = {
+      resourceType: masterSelectorTab === 'folders' ? 'FOLDER' : 'FILE',
+      resourceId: rid,
+    }
+    designateMasterMutation.mutate(payload)
+  }
 
   const [showInviteMember, setShowInviteMember] = useState(false)
   const [inviteSearch, setInviteSearch] = useState('')
@@ -1252,6 +1390,7 @@ function ProjectDetailPage() {
                         node={node}
                         depth={0}
                         selectedFolderId={selectedFolderId}
+                        docMaestroCarpetaId={project?.docMaestroCarpetaId ?? null}
                         onSelect={(n) => {
                           setSelectedFolderId(n.id)
                           setSelectedResource({
@@ -1603,6 +1742,12 @@ function ProjectDetailPage() {
                                 >
                                   {f.name}
                                 </span>
+                                {project?.docMaestroCarpetaId?.toLowerCase() === f.id.toLowerCase() && (
+                                  <span className="ml-auto shrink-0 inline-flex items-center gap-0.5 text-[9.5px] font-semibold leading-none px-1 py-0.5 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-200 ring-1 ring-black/5" title="Documento maestro del proyecto">
+                                    <FileCheck2 className="w-3 h-3" />
+                                    <span className="hidden sm:inline">Maestro</span>
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="py-0.5 px-2 text-muted-foreground hidden sm:table-cell align-middle">
@@ -1719,6 +1864,12 @@ function ProjectDetailPage() {
                                 >
                                   {file.name}
                                 </span>
+                                {project?.docMaestroArchivoId?.toLowerCase() === file.id.toLowerCase() && (
+                                  <span className="ml-auto shrink-0 inline-flex items-center gap-0.5 text-[9.5px] font-semibold leading-none px-1 py-0.5 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-200 ring-1 ring-black/5" title="Documento maestro del proyecto">
+                                    <FileCheck2 className="w-3 h-3" />
+                                    <span className="hidden sm:inline">Maestro</span>
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="py-0.5 px-2 text-muted-foreground hidden sm:table-cell align-middle">
@@ -1840,7 +1991,159 @@ function ProjectDetailPage() {
         </div>
       )}
 
-      {activeTab !== 'docs' && activeTab !== 'team' && (
+      {activeTab === 'master' && (
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          {!project ? null : (() => {
+            const documentoMaestro: ProjectMasterDocInfo | null = detail?.documentoMaestro ?? null
+            const hasMaster = Boolean(documentoMaestro)
+            return (
+              <div className="max-w-3xl mx-auto space-y-4">
+                {hasMaster && documentoMaestro ? (
+                  <div className="card overflow-hidden">
+                    <div className="p-4 border-b border-border bg-gradient-to-r from-brand-500/10 via-brand-500/5 to-transparent dark:from-brand-500/20 dark:via-brand-500/10">
+                      <div className="flex items-start gap-3">
+                        <div className="w-11 h-11 rounded-lg bg-brand-500/25 flex items-center justify-center shrink-0 ring-1 ring-black/5">
+                          <FileCheck2 className="w-5 h-5 text-brand-600 dark:text-brand-300" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-[11px] uppercase tracking-wider font-semibold text-brand-600 dark:text-brand-300">
+                              Documento maestro designado
+                            </p>
+                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-foreground/5 text-muted-foreground ring-1 ring-black/5">
+                              {documentoMaestro.resourceType === 'FOLDER' ? <Folder className="w-3 h-3" /> : <File className="w-3 h-3" />}
+                              {documentoMaestro.resourceType === 'FOLDER' ? 'Carpeta' : 'Archivo'}
+                            </span>
+                          </div>
+                          <h2 className="mt-1.5 text-[17px] font-semibold text-foreground truncate" title={documentoMaestro.name}>
+                            {documentoMaestro.name}
+                          </h2>
+                          {documentoMaestro.path && documentoMaestro.path !== '/' && (
+                            <p className="mt-0.5 text-xs text-muted-foreground truncate" title={documentoMaestro.path}>
+                              /{documentoMaestro.path}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Actualizado</p>
+                        <p className="text-foreground font-medium">
+                          {documentoMaestro.lastUpdatedAt ? formatRelativeTime(documentoMaestro.lastUpdatedAt) : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Propietario</p>
+                        <p className="text-foreground font-medium truncate" title={documentoMaestro.ownerName || ''}>
+                          {documentoMaestro.ownerName || '—'}
+                        </p>
+                      </div>
+                      {documentoMaestro.resourceType === 'FILE' ? (
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Tamaño</p>
+                          <p className="text-foreground font-medium">
+                            {typeof documentoMaestro.size === 'number' ? formatBytes(documentoMaestro.size) : '—'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Tipo</p>
+                          <p className="text-foreground font-medium">Espacio maestro</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-muted-foreground mb-0.5">Identificador</p>
+                        <p className="text-foreground font-mono text-[11px] truncate" title={documentoMaestro.resourceId}>
+                          {String(documentoMaestro.resourceId).slice(0, 8)}…
+                        </p>
+                      </div>
+                    </div>
+                    <div className="p-4 border-t border-border flex items-center justify-end gap-2 bg-surface-secondary/30">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (documentoMaestro.resourceType === 'FOLDER') {
+                            setSelectedFolderId(documentoMaestro.resourceId)
+                            setActiveTab('docs')
+                          } else {
+                            setSelectedResource({ projectId, type: 'file', id: documentoMaestro.resourceId })
+                            if (!rightPanelOpen) toggleRightPanel()
+                            setActiveTab('docs')
+                          }
+                        }}
+                        className="btn-secondary text-sm"
+                      >
+                        <Compass className="w-4 h-4" />
+                        Abrir
+                      </button>
+                      {canAdminMaster && (
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmClearMaster(true)}
+                          disabled={clearMasterMutation.isPending}
+                          className="btn-ghost text-sm text-status-blocked hover:bg-status-blocked/10 hover:text-status-blocked"
+                        >
+                          {clearMasterMutation.isPending ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Quitando…
+                            </>
+                          ) : (
+                            <>
+                              <X className="w-4 h-4" />
+                              Quitar designación
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card overflow-hidden text-center">
+                    <div className="p-8">
+                      <div className="w-14 h-14 mx-auto rounded-2xl bg-surface-secondary flex items-center justify-center mb-4 ring-1 ring-black/5">
+                        <FileCheck2 className="w-7 h-7 opacity-50" />
+                      </div>
+                      <h2 className="text-[17px] font-semibold text-foreground">
+                        Sin documento maestro
+                      </h2>
+                      <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
+                        Designa una carpeta o archivo como el punto de entrada principal del proyecto.
+                        El contenido aparecerá destacado y podrá abrirse directamente desde aquí.
+                      </p>
+                    </div>
+                    {canAdminMaster && (
+                      <div className="p-4 border-t border-border bg-surface-secondary/40 flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMasterSelectorTab(selectedFolderId ? 'folders' : 'files')
+                            setMasterSelectedFolderId(selectedFolderId)
+                            setMasterSelectedFileId(null)
+                            setShowMasterSelector(true)
+                          }}
+                          className="btn-primary text-sm"
+                        >
+                          <FileCheck2 className="w-4 h-4" />
+                          Designar documento maestro
+                        </button>
+                      </div>
+                    )}
+                    {!canAdminMaster && (
+                      <div className="p-4 border-t border-border bg-surface-secondary/20 text-xs text-muted-foreground">
+                        Solo el propietario del proyecto o un administrador puede designar el documento maestro.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && (
         <div className="flex-1 flex items-center justify-center text-center p-8 overflow-y-auto">
           <div className="text-muted-foreground">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-surface-secondary flex items-center justify-center mb-4">
@@ -2584,6 +2887,232 @@ function ProjectDetailPage() {
         </div>
       )}
 
+      {showMasterSelector && project && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (!designateMasterMutation.isPending) setShowMasterSelector(false)
+          }}
+        >
+          <div
+            className="card w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Designar documento maestro</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Selecciona la carpeta o archivo que actuará como punto de entrada principal del proyecto.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={designateMasterMutation.isPending}
+                onClick={() => setShowMasterSelector(false)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-surface-secondary"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="border-b border-border bg-surface-secondary/40 px-4 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setMasterSelectorTab('folders')
+                  setMasterSelectedFileId(null)
+                }}
+                className={clsx(
+                  'px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+                  masterSelectorTab === 'folders'
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-300'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Folder className="w-3.5 h-3.5" />
+                  Carpetas
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMasterSelectorTab('files')
+                  setMasterSelectedFolderId(null)
+                }}
+                className={clsx(
+                  'px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+                  masterSelectorTab === 'files'
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-300'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <File className="w-3.5 h-3.5" />
+                  Archivos
+                </span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3">
+              {masterSelectorTab === 'folders' ? (
+                <div className="space-y-0.5">
+                  {folderTree.length > 0 ? (
+                    folderTree.map((r) => (
+                      <MasterFolderTreeItem
+                        key={r.id}
+                        node={r}
+                        depth={0}
+                        selectedFolderId={masterSelectedFolderId}
+                        onSelect={(id) => setMasterSelectedFolderId(id)}
+                      />
+                    ))
+                  ) : (
+                    <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+                      <Folder className="w-5 h-5 opacity-40 mx-auto mb-2" />
+                      El proyecto aún no tiene carpetas creadas. Crea una primero o designa un archivo.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {filesIsLoading ? (
+                    <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+                      <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 opacity-50" />
+                      Cargando archivos…
+                    </div>
+                  ) : !filesQuery.data?.items?.length ? (
+                    <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+                      No hay archivos en la ubicación actual. Puedes cambiar la carpeta seleccionada en la pestaña Documentos para ver más.
+                    </div>
+                  ) : (
+                    filesQuery.data.items.map((f) => {
+                      const KindIcon = iconForKind(fileKind(f))
+                      const sel = masterSelectedFileId === f.id
+                      return (
+                        <button
+                          type="button"
+                          key={f.id}
+                          onClick={() => setMasterSelectedFileId(f.id)}
+                          className={clsx(
+                            'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left transition-colors',
+                            sel ? 'bg-brand-600/15 ring-1 ring-brand-500/60 text-foreground' : 'text-foreground hover:bg-surface-secondary'
+                          )}
+                        >
+                          <div className={clsx('w-8 h-8 rounded-md flex items-center justify-center shrink-0', colorForKind(fileKind(f)))}>
+                            <KindIcon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{f.name}</p>
+                            <p className="truncate text-[11px] text-muted-foreground">
+                              {typeof f.sizeBytes === 'number' ? formatBytes(f.sizeBytes) : 'Sin tamaño'} · {formatRelativeTime(f.updatedAt ?? f.createdAt)}
+                            </p>
+                          </div>
+                          {sel && (
+                            <Check className="w-4 h-4 ml-2 text-brand-600 dark:text-brand-300 shrink-0" />
+                          )}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-border bg-surface-secondary/40 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                onClick={() => setShowMasterSelector(false)}
+                disabled={designateMasterMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-primary text-sm"
+                disabled={
+                  designateMasterMutation.isPending ||
+                  (masterSelectorTab === 'folders' && !masterSelectedFolderId) ||
+                  (masterSelectorTab === 'files' && !masterSelectedFileId)
+                }
+                onClick={handleMasterDesignateSubmit}
+              >
+                {designateMasterMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Designando…
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Designar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmClearMaster && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (!clearMasterMutation.isPending) setShowConfirmClearMaster(false)
+          }}
+        >
+          <div
+            className="card w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-status-blocked/15 flex items-center justify-center shrink-0 ring-1 ring-black/5">
+                  <ShieldAlert className="w-5 h-5 text-status-blocked" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base font-semibold text-foreground">Quitar documento maestro</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Esta acción desvincula el documento o carpeta actualmente designada como maestro del proyecto.
+                    El contenido no se eliminará, solo deja de estar marcado como principal.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                onClick={() => setShowConfirmClearMaster(false)}
+                disabled={clearMasterMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-ghost text-sm text-status-blocked hover:bg-status-blocked/10 hover:text-status-blocked"
+                onClick={() => clearMasterMutation.mutate()}
+                disabled={clearMasterMutation.isPending}
+              >
+                {clearMasterMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Quitando…
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Sí, quitar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {folderContextMenu && (
         <>
           <div
@@ -2658,6 +3187,48 @@ function ProjectDetailPage() {
               />
               {(isLocalFavorite('FOLDER', folderContextMenu.folder.id) ?? false) ? 'Quitar de favoritos' : 'Añadir a favoritos'}
             </button>
+            {canAdminMaster && (() => {
+              const isMaster = project?.docMaestroCarpetaId != null && String(project.docMaestroCarpetaId).toLowerCase() === String(folderContextMenu.folder.id).toLowerCase()
+              return (
+                <>
+                  <div className="my-1 border-t border-border/60" />
+                  {isMaster ? (
+                    <button
+                      onClick={() => {
+                        setFolderContextMenu(null)
+                        setShowConfirmClearMaster(true)
+                      }}
+                      disabled={clearMasterMutation.isPending}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-status-blocked/10 text-status-blocked disabled:opacity-50"
+                    >
+                      {clearMasterMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                      Quitar de documento maestro
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const f = folderContextMenu.folder
+                        setFolderContextMenu(null)
+                        designateMasterMutation.mutate({ resourceType: 'FOLDER', resourceId: f.id })
+                      }}
+                      disabled={designateMasterMutation.isPending}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground disabled:opacity-50"
+                    >
+                      {designateMasterMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <FileCheck2 className="w-4 h-4 text-brand-500" />
+                      )}
+                      Designar como maestro
+                    </button>
+                  )}
+                </>
+              )
+            })()}
             <div className="my-1 border-t border-border/60" />
             <button
               onClick={() => {
@@ -2776,6 +3347,48 @@ function ProjectDetailPage() {
               />
               {(isLocalFavorite('FILE', fileContextMenu.file.id) ?? false) ? 'Quitar de favoritos' : 'Añadir a favoritos'}
             </button>
+            {canAdminMaster && (() => {
+              const isMaster = project?.docMaestroArchivoId != null && String(project.docMaestroArchivoId).toLowerCase() === String(fileContextMenu.file.id).toLowerCase()
+              return (
+                <>
+                  <div className="my-1 border-t border-border/60" />
+                  {isMaster ? (
+                    <button
+                      onClick={() => {
+                        setFileContextMenu(null)
+                        setShowConfirmClearMaster(true)
+                      }}
+                      disabled={clearMasterMutation.isPending}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-status-blocked/10 text-status-blocked disabled:opacity-50"
+                    >
+                      {clearMasterMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                      Quitar de documento maestro
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const f = fileContextMenu.file
+                        setFileContextMenu(null)
+                        designateMasterMutation.mutate({ resourceType: 'FILE', resourceId: f.id })
+                      }}
+                      disabled={designateMasterMutation.isPending}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground disabled:opacity-50"
+                    >
+                      {designateMasterMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <FileCheck2 className="w-4 h-4 text-brand-500" />
+                      )}
+                      Designar como maestro
+                    </button>
+                  )}
+                </>
+              )
+            })()}
             <div className="my-1 border-t border-border/60" />
             <button
               onClick={() => {
@@ -3340,16 +3953,21 @@ function FolderTreeItem({
   selectedFolderId,
   onSelect,
   onContextMenu,
+  docMaestroCarpetaId,
 }: {
   node: FolderNode
   depth: number
   selectedFolderId: string | null
   onSelect: (node: FolderNode) => void
   onContextMenu?: (e: React.MouseEvent, node: FolderNode) => void
+  docMaestroCarpetaId?: string | null
 }) {
   const [open, setOpen] = useState(depth === 0)
   const hasChildren = node.children.length > 0
   const isSelected = selectedFolderId === node.id
+  const isDocMaster =
+    docMaestroCarpetaId != null &&
+    String(node.id).toLowerCase() === String(docMaestroCarpetaId).toLowerCase()
   const padLeft = 8 + depth * 14
   return (
     <div className="relative">
@@ -3432,6 +4050,15 @@ function FolderTreeItem({
           )}
         />
         <span className="truncate font-medium min-w-0">{node.name}</span>
+        {isDocMaster && (
+          <span
+            className="ml-auto mr-1 inline-flex items-center gap-0.5 text-[9.5px] font-semibold leading-none px-1 py-0.5 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-200 ring-1 ring-black/5"
+            title="Documento maestro del proyecto"
+          >
+            <FileCheck2 className="w-3 h-3" />
+            <span className="hidden sm:inline">Maestro</span>
+          </span>
+        )}
       </button>
       {open &&
         node.children.map((child) => (
@@ -3442,6 +4069,7 @@ function FolderTreeItem({
             selectedFolderId={selectedFolderId}
             onSelect={onSelect}
             onContextMenu={onContextMenu}
+            docMaestroCarpetaId={docMaestroCarpetaId ?? null}
           />
         ))}
     </div>
