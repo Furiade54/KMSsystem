@@ -101,21 +101,8 @@ type ConfirmDeleteTarget =
 function UsersPage() {
   const queryClient = useQueryClient()
   const currentUser = useAuthStore((s) => s.user)
-  const isCurrentUser = (id: string) => currentUser?.id?.toLowerCase() === String(id).toLowerCase()
   const isOrgAdmin = !!currentUser?.isOrgAdmin
   const isHydrated = useAuthStore((s) => s.isHydrated)
-
-  if (isHydrated && !isOrgAdmin) {
-    return <Navigate to="/projects" replace />
-  }
-  if (!isHydrated) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-        Cargando…
-      </div>
-    )
-  }
 
   const [page, setPage] = useState(1)
   const [searchInput, setSearchInput] = useState('')
@@ -232,7 +219,21 @@ function UsersPage() {
     onError: (err: any) => alert(extractUserError(err, 'No se pudieron asignar los roles')),
   })
 
+  const isCurrentUser = (id: string) => currentUser?.id?.toLowerCase() === String(id).toLowerCase()
+
   function closeActions() { setActionMenu(null) }
+
+  if (isHydrated && !isOrgAdmin) {
+    return <Navigate to="/projects" replace />
+  }
+  if (!isHydrated) {
+    return (
+      <div className="h-full flex items-center justify-center text-muted-foreground">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" />
+        Cargando…
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6" onClick={closeActions}>

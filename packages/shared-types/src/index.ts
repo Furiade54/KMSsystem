@@ -98,6 +98,20 @@ export interface UpdateUserDto {
   roleIds?: string[]
 }
 
+export interface CreateOrganizationDto {
+  name: string
+  taxId?: string | null
+  logoUrl?: string | null
+  status?: EntityStatus
+}
+
+export interface UpdateOrganizationDto {
+  name?: string
+  taxId?: string | null
+  logoUrl?: string | null
+  status?: EntityStatus
+}
+
 export interface Permission {
   id: string
   code: PermissionCode
@@ -107,6 +121,10 @@ export interface Permission {
 export type PermissionCode =
   | 'org.ver'
   | 'org.editar'
+  | 'org.crear'
+  | 'org.eliminar'
+  | 'org.eliminar_permanente'
+  | 'org.listar'
   | 'usuarios.ver'
   | 'usuarios.crear'
   | 'usuarios.editar'
@@ -135,6 +153,10 @@ export type PermissionCode =
 export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
   'org.ver',
   'org.editar',
+  'org.crear',
+  'org.eliminar',
+  'org.eliminar_permanente',
+  'org.listar',
   'usuarios.ver',
   'usuarios.crear',
   'usuarios.editar',

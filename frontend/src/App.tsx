@@ -12,6 +12,8 @@ import TrashPage from './pages/TrashPage'
 import TeamsPage from './pages/TeamsPage'
 import UsersPage from './pages/UsersPage'
 import RequestsPage from './pages/RequestsPage'
+import OrganizationSettingsPage from './pages/OrganizationSettingsPage'
+import OrganizationsPage from './pages/OrganizationsPage'
 
 function App() {
   return (
@@ -30,6 +32,8 @@ function App() {
         <Route path="trash" element={<TrashPage />} />
         <Route path="teams" element={<TeamsPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="organizations/me" element={<OrganizationSettingsPage />} />
+        <Route path="organizations" element={<OrganizationsPage />} />
         <Route path="requests" element={<RequestsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
