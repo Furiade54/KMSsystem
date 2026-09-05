@@ -47,6 +47,7 @@ export async function permanentlyDeleteProject(
   let projectName = ''
   let storageKeys: string[] = []
   let deletedGrants = 0
+  let deletedOrphanRows = 0
 
   try {
     await tx.begin()
@@ -90,82 +91,120 @@ export async function permanentlyDeleteProject(
     const delReq = tx.request()
     delReq.input('projectId', sql.UniqueIdentifier, projectId)
     delReq.input('orgId', sql.UniqueIdentifier, auth.organizationId)
-    await delReq.batch(`
-      SET NOCOUNT ON;
+    const delRes = await delReq.query<{ orphanRows: number }>(`
+      SET NOCOUNT OFF;
+      SET XACT_ABORT ON;
 
-      /*
-        FK reales en MSSQL verificadas contra la base KMS:
-        - Archivos.IdProyecto -> Proyectos.Id = NO_ACTION
-        - Carpetas.IdProyecto -> Proyectos.Id = CASCADE
-        - MiembrosProyecto.IdProyecto -> Proyectos.Id = CASCADE
-        - RecursosExternos.IdProyecto -> Proyectos.Id = CASCADE
-        - Reuniones.IdProyecto -> Proyectos.Id = CASCADE
-        - TemasProyecto.IdProyecto -> Proyectos.Id = CASCADE
-        Por eso borramos Archivos manualmente antes de borrar Proyectos y dejamos que
-        el motor elimine el resto de tablas hijas con ON DELETE CASCADE.
-      */
+      /* ============================================================
+         PASO 1: Construir tablas variables con la jerarquia COMPLETA
+         de carpetas (recursiva) + archivos, incluyendo huerfanos
+         antiguos con IdProyecto NULL. Reutilizamos en TODOS los
+         DELETE posteriores para no recalcular CTE 5 veces.
+         ============================================================ */
+      DECLARE @Carpetas TABLE (Id UNIQUEIDENTIFIER PRIMARY KEY);
+      WITH FolderHierarchy AS (
+        SELECT Id
+        FROM Carpetas
+        WHERE IdProyecto = @projectId
+        UNION ALL
+        SELECT c.Id
+        FROM Carpetas c
+        INNER JOIN FolderHierarchy p ON p.Id = c.IdCarpetaPadre
+      )
+      INSERT INTO @Carpetas (Id)
+      SELECT DISTINCT Id FROM FolderHierarchy;
 
+      DECLARE @Archivos TABLE (Id UNIQUEIDENTIFIER PRIMARY KEY);
+      INSERT INTO @Archivos (Id)
+      SELECT Id FROM Archivos WHERE IdProyecto = @projectId;
+      INSERT INTO @Archivos (Id)
+      SELECT a.Id
+      FROM Archivos a
+      WHERE a.IdProyecto IS NULL AND a.IdCarpeta IN (SELECT Id FROM @Carpetas);
+
+      DECLARE @orphan INT = 0;
+
+      /* ============================================================
+         PASO 2: Borrar dependencias de TABLAS sin FK CASCADE o que
+         puedan apuntar a carpetas/archivos HUERFANOS sin IdProyecto.
+         ============================================================ */
+
+      /* PermisosRecurso: grants sobre carpetas/archivos de este arbol
+         (el cleanup de grants del scope proyecto ya corre en deletedGrants) */
+      DELETE pr FROM PermisosRecurso pr
+      WHERE pr.TipoRecurso IN ('CARPETA','ARCHIVO')
+        AND ((pr.TipoRecurso = 'CARPETA' AND pr.IdRecurso IN (SELECT Id FROM @Carpetas))
+          OR (pr.TipoRecurso = 'ARCHIVO' AND pr.IdRecurso IN (SELECT Id FROM @Archivos)));
+      SET @orphan = @orphan + @@ROWCOUNT;
+
+      /* ComentariosArchivos huerfanos (sin IdProyecto) de estos archivos;
+         los que si tienen IdProyecto se borran con el CASCADE Proyectos. */
+      DELETE ca FROM ComentariosArchivos ca
+      WHERE ca.IdProyecto IS NULL AND ca.IdArchivo IN (SELECT Id FROM @Archivos);
+      SET @orphan = @orphan + @@ROWCOUNT;
+
+      /* Comentarios: proyecto + carpeta (incluye huerfanas via @Carpetas)
+         + archivo (incluye huerfanos via @Archivos). Mejor IN/EXISTS en vars. */
       DELETE c
       FROM Comentarios c
       WHERE (c.TipoRecurso = 'project' AND c.IdRecurso = @projectId)
-         OR (c.TipoRecurso = 'folder' AND EXISTS (
-              SELECT 1 FROM Carpetas f WHERE f.Id = c.IdRecurso AND f.IdProyecto = @projectId
-            ))
-         OR (c.TipoRecurso = 'file' AND EXISTS (
-              SELECT 1 FROM Archivos a WHERE a.Id = c.IdRecurso AND a.IdProyecto = @projectId
-            ));
+         OR (c.TipoRecurso = 'folder' AND c.IdRecurso IN (SELECT Id FROM @Carpetas))
+         OR (c.TipoRecurso = 'file' AND c.IdRecurso IN (SELECT Id FROM @Archivos));
 
-      DELETE ca
-      FROM ComentariosArchivos ca
-      WHERE ca.IdProyecto = @projectId;
+      /* ComentariosArchivos con IdProyecto (por si el FK NO_ACTION viejo). */
+      DELETE ca FROM ComentariosArchivos ca WHERE ca.IdProyecto = @projectId;
 
+      /* SolicitudesAcceso: mismo patron que Comentarios. */
       DELETE s
       FROM SolicitudesAcceso s
       WHERE (s.TipoRecurso = 'proyecto' AND s.IdRecurso = @projectId)
-         OR (s.TipoRecurso = 'carpeta' AND EXISTS (
-              SELECT 1 FROM Carpetas f WHERE f.Id = s.IdRecurso AND f.IdProyecto = @projectId
-            ))
-         OR (s.TipoRecurso = 'archivo' AND EXISTS (
-              SELECT 1 FROM Archivos a WHERE a.Id = s.IdRecurso AND a.IdProyecto = @projectId
-            ));
+         OR (s.TipoRecurso = 'carpeta' AND s.IdRecurso IN (SELECT Id FROM @Carpetas))
+         OR (s.TipoRecurso = 'archivo' AND s.IdRecurso IN (SELECT Id FROM @Archivos));
 
+      /* Auditoria: proyecto + carpeta arbol + archivos set.
+         TipoRecurso guardado lowercase/project/folder/file en BD vieja. */
       DELETE au
       FROM Auditoria au
       WHERE (LOWER(au.TipoRecurso) = 'project' AND au.IdRecurso = @projectId)
-         OR (LOWER(au.TipoRecurso) = 'folder' AND EXISTS (
-              SELECT 1 FROM Carpetas f WHERE f.Id = au.IdRecurso AND f.IdProyecto = @projectId
-            ))
-         OR (LOWER(au.TipoRecurso) = 'file' AND EXISTS (
-              SELECT 1 FROM Archivos a WHERE a.Id = au.IdRecurso AND a.IdProyecto = @projectId
-            ));
+         OR (LOWER(au.TipoRecurso) = 'folder' AND au.IdRecurso IN (SELECT Id FROM @Carpetas))
+         OR (LOWER(au.TipoRecurso) = 'file' AND au.IdRecurso IN (SELECT Id FROM @Archivos));
 
+      /* Favoritos: mismo patron. */
       DELETE fv
       FROM Favoritos fv
       WHERE fv.IdOrganizacion = @orgId AND (
-          (fv.TipoRecurso = 'PROJECT' AND fv.IdRecurso = @projectId)
-          OR (fv.TipoRecurso = 'FOLDER' AND EXISTS (SELECT 1 FROM Carpetas c WHERE c.Id = fv.IdRecurso AND c.IdProyecto = @projectId))
-          OR (fv.TipoRecurso = 'FILE' AND EXISTS (SELECT 1 FROM Archivos a WHERE a.Id = fv.IdRecurso AND a.IdProyecto = @projectId))
+            (fv.TipoRecurso = 'PROJECT' AND fv.IdRecurso = @projectId)
+         OR (fv.TipoRecurso = 'FOLDER'  AND fv.IdRecurso IN (SELECT Id FROM @Carpetas))
+         OR (fv.TipoRecurso = 'FILE'    AND fv.IdRecurso IN (SELECT Id FROM @Archivos))
       );
 
-      /*
-        Archivos no tiene ON DELETE CASCADE hacia Proyectos y, ademas, VersionesArchivo
-        cuelga de Archivos con CASCADE. Basta borrar Archivos para que SQL Server
-        elimine VersionesArchivo automaticamente.
-      */
-      DELETE FROM Archivos WHERE IdProyecto = @projectId;
+      /* ============================================================
+         PASO 3: Tablas que requieren borrado manual antes de CASCADE.
+         Archivos no tiene ON DELETE CASCADE hacia Proyectos; pero
+         VersionesArchivo cuelga de Archivos con CASCADE y se borra
+         sola al borrar Archivos.
+         ============================================================ */
+      DELETE a
+      FROM Archivos a
+      WHERE a.Id IN (SELECT Id FROM @Archivos);
 
-      /*
-        El resto de dependencias con FK a Proyectos se resuelven via ON DELETE CASCADE:
-        Carpetas, MiembrosProyecto, RecursosExternos, Reuniones y TemasProyecto.
-        A su vez, Reuniones cascada a ActasReunion y AsistentesReunion.
-      */
+      /* ============================================================
+         PASO 4: BORRAR PROYECTO. ON DELETE CASCADE de la FK
+         Proyectos.Id se encarga automaticamente de:
+         Carpetas, MiembrosProyecto, RecursosExternos, Reuniones,
+         TemasProyecto. Reuniones a su vez cascada ActasReunion y
+         AsistentesReunion.
+         ============================================================ */
       DELETE FROM Proyectos WHERE Id = @projectId AND IdOrganizacion = @orgId;
+
+      SELECT @orphan AS orphanRows;
     `)
+    deletedOrphanRows = Number(delRes.recordset[0]?.orphanRows ?? 0)
 
     await tx.commit()
   } catch (err) {
     try {
-      await tx.rollback()
+      if (tx) await tx.rollback()
     } catch {
       /* ignore */
     }
@@ -183,7 +222,11 @@ export async function permanentlyDeleteProject(
     resourceType: 'project',
     resourceId: projectId,
     resourceName: projectName || null,
-    extra: { deletedFilesCount: storageKeys.length, deletedGrantsCount: deletedGrants },
+    extra: {
+      deletedFilesCount: storageKeys.length,
+      deletedGrantsCount: deletedGrants,
+      deletedOrphanRows,
+    },
     req: req ?? null,
-  })
+  }).catch(() => {})
 }

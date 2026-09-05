@@ -38,6 +38,8 @@ import {
   ShieldAlert,
   UserPlus,
   UserMinus,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -201,6 +203,11 @@ function ProjectDetailPage() {
   const [docsAreaContextMenu, setDocsAreaContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [treeWidth, setTreeWidth] = useState<number>(224)
   const [isResizing, setIsResizing] = useState(false)
+  const [pageToast, setPageToast] = useState<{
+    kind: 'error' | 'success'
+    title: string
+    message: string
+  } | null>(null)
   const TREE_MIN_W = 180
   const TREE_MAX_W = 420
 
@@ -497,9 +504,21 @@ function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
+      setPageToast({
+        kind: 'success',
+        title: 'Miembro retirado',
+        message: 'El usuario se retiró del proyecto y sus permisos específicos se revocaron.',
+      })
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.message || err?.message || 'No se pudo retirar el miembro')
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo retirar el miembro',
+        message:
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error desconocido. Inténtalo de nuevo.',
+      })
     },
   })
 
@@ -510,9 +529,21 @@ function ProjectDetailPage() {
       updateProjectMemberRole(projectId, payload.memberId, payload.roleName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
+      setPageToast({
+        kind: 'success',
+        title: 'Rol actualizado',
+        message: 'El rol del miembro en el proyecto se actualizó correctamente.',
+      })
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.message || err?.message || 'No se pudo actualizar el rol')
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo actualizar el rol',
+        message:
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error desconocido. Inténtalo de nuevo.',
+      })
     },
   })
   void updateRoleMutation
@@ -525,7 +556,14 @@ function ProjectDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['favorite', 'check'] })
     },
     onError: (err: any) => {
-      alert(err?.response?.data?.message || err?.message || 'No se pudo actualizar el favorito')
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo actualizar el favorito',
+        message:
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error desconocido. Inténtalo de nuevo.',
+      })
     },
   })
 
@@ -861,6 +899,12 @@ function ProjectDetailPage() {
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [folderContextMenu, fileContextMenu, docsAreaContextMenu])
+
+  useEffect(() => {
+    if (!pageToast) return
+    const t = setTimeout(() => setPageToast(null), 6500)
+    return () => clearTimeout(t)
+  }, [pageToast])
 
   const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -3241,6 +3285,49 @@ function ProjectDetailPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {pageToast && (
+        <div className="fixed top-4 right-4 z-[60] max-w-sm w-full">
+          <div
+            className={clsx(
+              'card shadow-lg border flex items-start gap-3 p-4 pr-12 animate-in fade-in slide-in-from-right-4',
+              pageToast.kind === 'error'
+                ? 'border-status-blocked/40 bg-status-blocked/10'
+                : 'border-status-approved/40 bg-status-approved/10'
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <div
+              className={clsx(
+                'w-10 h-10 rounded-xl shrink-0 flex items-center justify-center',
+                pageToast.kind === 'error'
+                  ? 'bg-status-blocked/15 text-status-blocked'
+                  : 'bg-status-approved/15 text-status-approved'
+              )}
+            >
+              {pageToast.kind === 'error' ? (
+                <XCircle className="w-5 h-5" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h4 className="font-semibold text-sm text-foreground">{pageToast.title}</h4>
+              <p className="text-xs text-muted-foreground dark:text-slate-300 mt-1 break-words">
+                {pageToast.message}
+              </p>
+            </div>
+            <button
+              className="absolute top-3 right-3 p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-muted-foreground"
+              onClick={() => setPageToast(null)}
+              aria-label="Cerrar notificación"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>

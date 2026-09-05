@@ -8,6 +8,9 @@ import {
   RotateCcw,
   Loader2,
   AlertTriangle,
+  XCircle,
+  CheckCircle2,
+  X,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -31,6 +34,11 @@ function TrashPage() {
   const [confirmRestoreProject, setConfirmRestoreProject] = useState<ApiProject | null>(null)
   const [confirmPermanentDeleteProject, setConfirmPermanentDeleteProject] =
     useState<ApiProject | null>(null)
+  const [toast, setToast] = useState<{
+    kind: 'error' | 'success'
+    title: string
+    message: string
+  } | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 400)
@@ -58,22 +66,49 @@ function TrashPage() {
   const restoreMutation = useMutation({
     mutationFn: (project: ApiProject) =>
       updateProject(project.id, { status: 'ACTIVE' as any }),
-    onSuccess: () => {
+    onSuccess: (_, project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setToast({
+        kind: 'success',
+        title: 'Proyecto restaurado',
+        message: `«${project.name}» volvió a estar activo correctamente.`,
+      })
+    },
+    onError: (err: any) => {
+      setToast({
+        kind: 'error',
+        title: 'No se pudo restaurar el proyecto',
+        message:
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error desconocido. Inténtalo de nuevo.',
+      })
     },
   })
 
   const permanentDeleteMutation = useMutation({
     mutationFn: (project: ApiProject) => permanentlyDeleteProject(project.id),
-    onSuccess: () => {
+    onSuccess: (_, project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setConfirmPermanentDeleteProject(null)
       if (items.length === 1 && page > 1) {
         setPage((current) => Math.max(1, current - 1))
       }
+      setToast({
+        kind: 'success',
+        title: 'Proyecto eliminado permanentemente',
+        message: `«${project.name}» y su contenido se borraron definitivamente.`,
+      })
     },
     onError: (err: any) => {
-      alert(err?.message || 'No se pudo eliminar permanentemente el proyecto')
+      setToast({
+        kind: 'error',
+        title: 'No se pudo eliminar permanentemente',
+        message:
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error desconocido. Revisa el proyecto tenga carpetas/archivos y vuelve a intentarlo.',
+      })
     },
   })
 
@@ -93,6 +128,12 @@ function TrashPage() {
       setPage(query.data.totalPages)
     }
   }, [page, query.data])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 6500)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const headerTotal = useMemo(() => {
     if (isLoading) return '…'
@@ -400,6 +441,49 @@ function TrashPage() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed top-4 right-4 z-[60] max-w-sm w-full">
+          <div
+            className={clsx(
+              'card shadow-lg border flex items-start gap-3 p-4 pr-12 animate-in fade-in slide-in-from-right-4',
+              toast.kind === 'error'
+                ? 'border-status-blocked/40 bg-status-blocked/10'
+                : 'border-status-approved/40 bg-status-approved/10'
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <div
+              className={clsx(
+                'w-10 h-10 rounded-xl shrink-0 flex items-center justify-center',
+                toast.kind === 'error'
+                  ? 'bg-status-blocked/15 text-status-blocked'
+                  : 'bg-status-approved/15 text-status-approved'
+              )}
+            >
+              {toast.kind === 'error' ? (
+                <XCircle className="w-5 h-5" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h4 className="font-semibold text-sm text-foreground">{toast.title}</h4>
+              <p className="text-xs text-muted-foreground dark:text-slate-300 mt-1 break-words">
+                {toast.message}
+              </p>
+            </div>
+            <button
+              className="absolute top-3 right-3 p-1.5 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-muted-foreground"
+              onClick={() => setToast(null)}
+              aria-label="Cerrar notificación"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}
