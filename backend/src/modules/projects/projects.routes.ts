@@ -12,6 +12,8 @@ import {
   addProjectMemberEndpoint,
   removeProjectMemberEndpoint,
   updateProjectMemberRoleEndpoint,
+  patchDocumentoMaestroEndpoint,
+  clearDocumentoMaestroEndpoint,
 } from './projects.controller'
 import {
   listPermissionsByResourceHandler,
@@ -32,6 +34,9 @@ projectsRouter.delete('/:id/permanent', requireResourcePermission('PROJECT', 'AD
 projectsRouter.post('/', requirePermission('proyectos.crear'), createProject)
 projectsRouter.patch('/:id', requireResourcePermission('PROJECT', 'EDITAR'), updateProject)
 projectsRouter.delete('/:id', requireResourcePermission('PROJECT', 'ADMINISTRAR'), deleteProject)
+
+projectsRouter.patch('/:id/documento-maestro', requireResourcePermission('PROJECT', 'ADMINISTRAR'), patchDocumentoMaestroEndpoint)
+projectsRouter.delete('/:id/documento-maestro', requireResourcePermission('PROJECT', 'ADMINISTRAR'), clearDocumentoMaestroEndpoint)
 
 projectsRouter.get('/:id/permisos', requirePermission(['proyectos.ver', 'recursos.permisos.ver'] as any), listPermissionsByResourceHandler)
 projectsRouter.post('/:id/permisos', requirePermission(['proyectos.editar', 'recursos.permisos.editar'] as any), upsertPermissionByResourceHandler)

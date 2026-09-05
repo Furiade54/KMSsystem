@@ -125,6 +125,15 @@ export async function permanentlyDeleteProject(
       DECLARE @orphan INT = 0;
 
       /* ============================================================
+         PASO 1.5: Limpiar refs FK doc maestro (IdDocMaestroCarpeta
+         tiene ON DELETE NO ACTION para evitar multiple cascade path;
+         el SET NULL de Archivos es automatico pero lo hacemos manual
+         tambien para robustez y orden de borrado).
+         ============================================================ */
+      UPDATE Proyectos SET IdDocMaestroCarpeta = NULL, IdDocMaestroArchivo = NULL, FechaActualizacion = GETDATE()
+      WHERE Id = @projectId AND IdOrganizacion = @orgId;
+
+      /* ============================================================
          PASO 2: Borrar dependencias de TABLAS sin FK CASCADE o que
          puedan apuntar a carpetas/archivos HUERFANOS sin IdProyecto.
          ============================================================ */

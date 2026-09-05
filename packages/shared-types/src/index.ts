@@ -290,8 +290,26 @@ export interface Project {
   description?: string | null
   status: ProjectStatus
   ownerId?: string | null
+  docMaestroCarpetaId?: string | null
+  docMaestroArchivoId?: string | null
   createdAt: string
   updatedAt?: string | null
+}
+
+export interface DesignateMasterDocPayload {
+  resourceType: 'FOLDER' | 'FILE'
+  resourceId: string
+}
+
+export interface ProjectMasterDocInfo {
+  resourceType: 'FOLDER' | 'FILE'
+  resourceId: string
+  name: string
+  path: string
+  size?: number | null
+  lastUpdatedAt?: string | null
+  ownerId?: string | null
+  ownerName?: string | null
 }
 
 export interface ProjectMember {

@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
-import type { ApiResponse, Project, PaginatedResult } from '../../../../packages/shared-types/src'
+import type { ApiResponse, Project, PaginatedResult, ProjectMasterDocInfo, DesignateMasterDocPayload } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { logAuditRecord } from '../../shared/db/audit'
 import { AppError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
@@ -14,6 +14,8 @@ type ProjectRow = {
   Descripcion: string | null
   Estado: string
   IdPropietario: string | null
+  IdDocMaestroCarpeta?: string | null
+  IdDocMaestroArchivo?: string | null
   FechaCreacion: Date
   FechaActualizacion: Date | null
   Color?: string | null
@@ -71,6 +73,8 @@ function mapProject(row: ProjectRow): Project & {
     description: row.Descripcion ?? '',
     status: statusMap[raw] ?? 'ACTIVE',
     ownerId: row.IdPropietario ? String(row.IdPropietario) : null,
+    docMaestroCarpetaId: row.IdDocMaestroCarpeta ? String(row.IdDocMaestroCarpeta) : null,
+    docMaestroArchivoId: row.IdDocMaestroArchivo ? String(row.IdDocMaestroArchivo) : null,
     createdAt: sqlLocalToIso(row.FechaCreacion as any),
     updatedAt: sqlLocalToIsoOrNull(row.FechaActualizacion as any),
     color: resolveColor(row),
@@ -191,6 +195,7 @@ export async function getProject(
     const r = await qry.query<ProjectRow>(`
       SELECT
         p.Id, p.IdOrganizacion, p.Nombre, p.Descripcion, p.Estado, p.IdPropietario,
+        p.IdDocMaestroCarpeta, p.IdDocMaestroArchivo,
         p.FechaCreacion, p.FechaActualizacion,
         (SELECT COUNT(*) FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id) miembrosCount,
         (SELECT COUNT(*) FROM Archivos a WHERE a.IdProyecto=p.Id) archivosCount
@@ -213,6 +218,7 @@ export async function getProject(
          (SELECT COUNT(*) FROM Archivos WHERE IdProyecto=@pid) archivosCount
       `)
     const s = stats.recordset[0] ?? {}
+    const documentoMaestro = await buildMasterDocInfo(pool, id, auth.organizationId, row.IdDocMaestroCarpeta || null, row.IdDocMaestroArchivo || null)
     res.status(200).json({
       success: true,
       data: {
@@ -224,10 +230,100 @@ export async function getProject(
           foldersCount: Number(s.carpetasCount ?? 0),
           filesCount: Number(s.archivosCount ?? 0),
         },
+        documentoMaestro,
       },
     })
   } catch (err) {
     next(err)
+  }
+}
+
+type RawMasterRow = {
+  resourceType: 'FOLDER' | 'FILE'
+  resourceId: string
+  name: string
+  path?: string | null
+  pathIds?: string | null
+  pathNames?: string | null
+  size: number | null
+  lastUpdatedAt: Date | null
+  ownerId: string | null
+  ownerName: string | null
+}
+
+async function buildMasterDocInfo(
+  pool: import('mssql').ConnectionPool,
+  projectId: string,
+  orgId: string,
+  folderId: string | null | undefined,
+  fileId: string | null | undefined
+): Promise<ProjectMasterDocInfo | null> {
+  if (!folderId && !fileId) return null
+  const q = pool.request()
+  q.input('pid', sql.UniqueIdentifier, projectId)
+  q.input('orgId', sql.UniqueIdentifier, orgId)
+  let queryStr: string
+  if (folderId) {
+    q.input('fid', sql.UniqueIdentifier, folderId)
+    queryStr = `
+      DECLARE @path NVARCHAR(MAX) = NULL;
+      DECLARE @cur UNIQUEIDENTIFIER = @fid;
+      WHILE @cur IS NOT NULL
+      BEGIN
+        DECLARE @p1 NVARCHAR(500) = (SELECT TOP 1 Nombre FROM Carpetas WHERE Id = @cur);
+        IF @p1 IS NOT NULL SET @path = @p1 + CASE WHEN @path IS NULL THEN '' ELSE '/' + @path END;
+        SET @cur = (SELECT TOP 1 IdCarpetaPadre FROM Carpetas WHERE Id = @cur);
+      END
+      SELECT TOP 1
+        CAST('FOLDER' AS VARCHAR(10)) AS resourceType,
+        CAST(c.Id AS VARCHAR(128)) AS resourceId,
+        c.Nombre AS name,
+        ISNULL(@path, c.Nombre) AS [path],
+        CAST(NULL AS BIGINT) AS size,
+        c.FechaActualizacion AS lastUpdatedAt,
+        CAST(c.IdPropietario AS VARCHAR(128)) AS ownerId,
+        u.NombreCompleto AS ownerName
+      FROM Carpetas c
+        LEFT JOIN Usuarios u ON u.Id = c.IdPropietario
+      WHERE c.Id = @fid;
+    `
+  } else {
+    q.input('fid', sql.UniqueIdentifier, fileId)
+    queryStr = `
+      DECLARE @path NVARCHAR(MAX) = NULL;
+      DECLARE @cur UNIQUEIDENTIFIER = (SELECT TOP 1 IdCarpeta FROM Archivos WHERE Id = @fid);
+      WHILE @cur IS NOT NULL
+      BEGIN
+        DECLARE @p2 NVARCHAR(500) = (SELECT TOP 1 Nombre FROM Carpetas WHERE Id = @cur);
+        IF @p2 IS NOT NULL SET @path = @p2 + CASE WHEN @path IS NULL THEN '' ELSE '/' + @path END;
+        SET @cur = (SELECT TOP 1 IdCarpetaPadre FROM Carpetas WHERE Id = @cur);
+      END
+      SELECT TOP 1
+        CAST('FILE' AS VARCHAR(10)) AS resourceType,
+        CAST(a.Id AS VARCHAR(128)) AS resourceId,
+        a.Nombre AS name,
+        ISNULL(@path, '') AS [path],
+        a.Tamano AS size,
+        a.FechaActualizacion AS lastUpdatedAt,
+        CAST(a.IdPropietario AS VARCHAR(128)) AS ownerId,
+        u.NombreCompleto AS ownerName
+      FROM Archivos a
+        LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+      WHERE a.Id = @fid;
+    `
+  }
+  const r = await q.query<RawMasterRow>(queryStr)
+  const rw = r.recordset[0]
+  if (!rw || !rw.resourceId) return null
+  return {
+    resourceType: rw.resourceType,
+    resourceId: String(rw.resourceId),
+    name: String(rw.name),
+    path: rw.path ? String(rw.path) : '/',
+    size: rw.size != null ? Number(rw.size) : null,
+    lastUpdatedAt: rw.lastUpdatedAt ? sqlLocalToIso(rw.lastUpdatedAt as any) : null,
+    ownerId: rw.ownerId ? String(rw.ownerId) : null,
+    ownerName: rw.ownerName ? String(rw.ownerName) : null,
   }
 }
 
@@ -667,6 +763,237 @@ export async function updateProjectMemberRoleEndpoint(
       avatarUrl: m.UrlAvatar ?? null,
     }
     res.status(200).json({ success: true, data })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function patchDocumentoMaestroEndpoint(
+  req: Request,
+  res: Response<ApiResponse<{ documentoMaestro: ProjectMasterDocInfo | null }>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.id)
+    const body = req.body as DesignateMasterDocPayload
+    const resourceType = body?.resourceType
+    const resourceId = body?.resourceId ? String(body.resourceId).trim() : ''
+
+    if (!resourceType || !['FOLDER', 'FILE'].includes(resourceType)) {
+      throw new AppError('resourceType debe ser FOLDER o FILE', 400)
+    }
+    if (!resourceId) throw new AppError('resourceId es obligatorio', 400)
+
+    const pool = await getDbPool()
+    const tx = pool.transaction()
+
+    let before: { folderId: string | null; fileId: string | null; projectName: string | null } = {
+      folderId: null, fileId: null, projectName: null,
+    }
+    let afterFolder: string | null = null
+    let afterFile: string | null = null
+    let validatedName: string | null = null
+
+    try {
+      await tx.begin()
+
+      const projQ = tx.request()
+      projQ.input('pid', sql.UniqueIdentifier, projectId)
+      projQ.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+      const projR = await projQ.query<{ Id: string; Nombre: string; IdDocMaestroCarpeta: string | null; IdDocMaestroArchivo: string | null }>(`
+        SELECT Id, Nombre, IdDocMaestroCarpeta, IdDocMaestroArchivo
+        FROM Proyectos
+        WHERE Id = @pid AND IdOrganizacion = @orgId AND Estado <> 'ELIMINADO';
+      `)
+      const projRow = projR.recordset[0]
+      if (!projRow) throw new NotFoundError('Proyecto no encontrado')
+      before = {
+        folderId: projRow.IdDocMaestroCarpeta ? String(projRow.IdDocMaestroCarpeta) : null,
+        fileId: projRow.IdDocMaestroArchivo ? String(projRow.IdDocMaestroArchivo) : null,
+        projectName: String(projRow.Nombre ?? ''),
+      }
+
+      if (resourceType === 'FOLDER') {
+        const fq = tx.request()
+        fq.input('rid', sql.UniqueIdentifier, resourceId)
+        const fR = await fq.query<{ Id: string; Nombre: string; IdProyecto: string | null; IdCarpetaPadre: string | null }>(`
+          SELECT TOP 1 Id, Nombre, IdProyecto, IdCarpetaPadre
+          FROM Carpetas
+          WHERE Id = @rid;
+        `)
+        const folderRow = fR.recordset[0]
+        if (!folderRow) throw new NotFoundError('Carpeta no encontrada en el proyecto')
+        let match = folderRow.IdProyecto && String(folderRow.IdProyecto).toLowerCase() === projectId.toLowerCase()
+        if (!match) {
+          let cur: string | null | undefined = folderRow.IdCarpetaPadre
+          while (cur && !match) {
+            const pq = tx.request()
+            pq.input('cid', sql.UniqueIdentifier, cur)
+            const pr = await pq.query<{ Id: string; IdProyecto: string | null; IdCarpetaPadre: string | null }>(`
+              SELECT TOP 1 Id, IdProyecto, IdCarpetaPadre FROM Carpetas WHERE Id = @cid;
+            `)
+            const nr = pr.recordset[0]
+            if (!nr) break
+            if (nr.IdProyecto && String(nr.IdProyecto).toLowerCase() === projectId.toLowerCase()) match = true
+            cur = nr.IdCarpetaPadre
+          }
+        }
+        if (!match) throw new NotFoundError('Carpeta no encontrada en el proyecto')
+        validatedName = String(folderRow.Nombre ?? '')
+        afterFolder = String(folderRow.Id)
+        afterFile = null
+      } else {
+        const fq = tx.request()
+        fq.input('rid', sql.UniqueIdentifier, resourceId)
+        const fR = await fq.query<{ Id: string; Nombre: string; IdProyecto: string | null; IdCarpeta: string | null }>(`
+          SELECT TOP 1 Id, Nombre, IdProyecto, IdCarpeta
+          FROM Archivos
+          WHERE Id = @rid;
+        `)
+        const fileRow = fR.recordset[0]
+        if (!fileRow) throw new NotFoundError('Archivo no encontrado en el proyecto')
+        let match = fileRow.IdProyecto && String(fileRow.IdProyecto).toLowerCase() === projectId.toLowerCase()
+        if (!match) {
+          let cur: string | null | undefined = fileRow.IdCarpeta
+          while (cur && !match) {
+            const pq = tx.request()
+            pq.input('cid', sql.UniqueIdentifier, cur)
+            const pr = await pq.query<{ Id: string; IdProyecto: string | null; IdCarpetaPadre: string | null }>(`
+              SELECT TOP 1 Id, IdProyecto, IdCarpetaPadre FROM Carpetas WHERE Id = @cid;
+            `)
+            const nr = pr.recordset[0]
+            if (!nr) break
+            if (nr.IdProyecto && String(nr.IdProyecto).toLowerCase() === projectId.toLowerCase()) match = true
+            cur = nr.IdCarpetaPadre
+          }
+        }
+        if (!match) throw new NotFoundError('Archivo no encontrado en el proyecto')
+        validatedName = String(fileRow.Nombre ?? '')
+        afterFolder = null
+        afterFile = String(fileRow.Id)
+      }
+
+      const upd = tx.request()
+      upd.input('pid', sql.UniqueIdentifier, projectId)
+      upd.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+      if (afterFolder) upd.input('cf', sql.UniqueIdentifier, afterFolder)
+      if (afterFile) upd.input('af', sql.UniqueIdentifier, afterFile)
+      await upd.query(`
+        UPDATE Proyectos
+        SET IdDocMaestroCarpeta = ${afterFolder ? '@cf' : 'NULL'},
+            IdDocMaestroArchivo = ${afterFile ? '@af' : 'NULL'},
+            FechaActualizacion = GETDATE()
+        WHERE Id = @pid AND IdOrganizacion = @orgId;
+      `)
+
+      await tx.commit()
+    } catch (err) {
+      try { await tx.rollback() } catch { /* ignore */ }
+      throw err
+    }
+
+    const documentoMaestro = await buildMasterDocInfo(pool, projectId, auth.organizationId, afterFolder, afterFile)
+
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'project.documento_maestro.actualizado',
+      resourceType: 'project',
+      resourceId: projectId,
+      resourceName: before.projectName,
+      extra: {
+        before: {
+          resourceType: before.folderId ? 'FOLDER' : before.fileId ? 'FILE' : null,
+          resourceId: before.folderId || before.fileId || null,
+        },
+        after: {
+          resourceType,
+          resourceId,
+          name: validatedName,
+        },
+        modo: 'designar',
+      },
+      req,
+    }).catch(() => { /* audit best-effort */ })
+
+    res.status(200).json({ success: true, data: { documentoMaestro } })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function clearDocumentoMaestroEndpoint(
+  req: Request,
+  res: Response<ApiResponse<void>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.id)
+
+    const pool = await getDbPool()
+    const tx = pool.transaction()
+
+    let before: { folderId: string | null; fileId: string | null; projectName: string | null } = {
+      folderId: null, fileId: null, projectName: null,
+    }
+
+    try {
+      await tx.begin()
+
+      const projQ = tx.request()
+      projQ.input('pid', sql.UniqueIdentifier, projectId)
+      projQ.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+      const projR = await projQ.query<{ Id: string; Nombre: string; IdDocMaestroCarpeta: string | null; IdDocMaestroArchivo: string | null }>(`
+        SELECT Id, Nombre, IdDocMaestroCarpeta, IdDocMaestroArchivo
+        FROM Proyectos
+        WHERE Id = @pid AND IdOrganizacion = @orgId AND Estado <> 'ELIMINADO';
+      `)
+      const projRow = projR.recordset[0]
+      if (!projRow) throw new NotFoundError('Proyecto no encontrado')
+      before = {
+        folderId: projRow.IdDocMaestroCarpeta ? String(projRow.IdDocMaestroCarpeta) : null,
+        fileId: projRow.IdDocMaestroArchivo ? String(projRow.IdDocMaestroArchivo) : null,
+        projectName: String(projRow.Nombre ?? ''),
+      }
+
+      const upd = tx.request()
+      upd.input('pid', sql.UniqueIdentifier, projectId)
+      upd.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+      await upd.query(`
+        UPDATE Proyectos
+        SET IdDocMaestroCarpeta = NULL,
+            IdDocMaestroArchivo = NULL,
+            FechaActualizacion = GETDATE()
+        WHERE Id = @pid AND IdOrganizacion = @orgId;
+      `)
+
+      await tx.commit()
+    } catch (err) {
+      try { await tx.rollback() } catch { /* ignore */ }
+      throw err
+    }
+
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'project.documento_maestro.actualizado',
+      resourceType: 'project',
+      resourceId: projectId,
+      resourceName: before.projectName,
+      extra: {
+        before: {
+          resourceType: before.folderId ? 'FOLDER' : before.fileId ? 'FILE' : null,
+          resourceId: before.folderId || before.fileId || null,
+        },
+        after: null,
+        modo: 'clear',
+      },
+      req,
+    }).catch(() => { /* audit best-effort */ })
+
+    res.status(204).end()
   } catch (err) {
     next(err)
   }

@@ -291,7 +291,9 @@ export async function deleteFolder(
       (row.IdPropietario && String(row.IdPropietario).toLowerCase() === String(auth.userId).toLowerCase())
     if (!isOwner) throw new ForbiddenError('Solo el propietario puede eliminar la carpeta')
 
-    const del = pool.request().input('id', sql.UniqueIdentifier, id)
+    const del = pool.request()
+    del.input('id', sql.UniqueIdentifier, id)
+    del.input('orgId', sql.UniqueIdentifier, auth.organizationId)
     await del.query(`
       SET NOCOUNT ON;
       DECLARE @IdsCarpeta TABLE (Id UNIQUEIDENTIFIER PRIMARY KEY);
@@ -301,6 +303,9 @@ export async function deleteFolder(
         SELECT c.Id FROM Carpetas c INNER JOIN cte ON c.IdCarpetaPadre = cte.Id
       )
       INSERT INTO @IdsCarpeta (Id) SELECT Id FROM cte;
+
+      UPDATE Proyectos SET IdDocMaestroCarpeta = NULL, FechaActualizacion = GETDATE()
+      WHERE IdDocMaestroCarpeta IN (SELECT Id FROM @IdsCarpeta) AND IdOrganizacion = @orgId;
 
       DELETE a FROM Archivos a INNER JOIN @IdsCarpeta i ON a.IdCarpeta=i.Id;
       DELETE r FROM Auditoria r INNER JOIN @IdsCarpeta i ON r.TipoRecurso='folder' AND r.IdRecurso=i.Id;
