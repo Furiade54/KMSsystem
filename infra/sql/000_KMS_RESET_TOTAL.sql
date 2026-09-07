@@ -471,6 +471,23 @@ CREATE INDEX IX_Archivos_IdProyecto_IdCarpeta
     ON dbo.Archivos(IdProyecto, IdCarpeta);
 GO
 
+/* ================================================================
+   FK Reuniones -> Archivos  (IdActaArchivo)
+   Aplicamos DESPUES de crear dbo.Archivos, porque dbo.Reuniones
+   se declaró antes (sección Reuniones / Asistentes / Actas).
+   ON DELETE SET NULL: al eliminar un Archivo vinculado, la Reunion
+   pierde la referencia pero no se borra.
+================================================================ */
+ALTER TABLE dbo.Reuniones
+    ADD CONSTRAINT FK_Reunion_ActaArchivo
+        FOREIGN KEY (IdActaArchivo) REFERENCES dbo.Archivos(Id) ON DELETE SET NULL;
+GO
+
+CREATE NONCLUSTERED INDEX IX_Reuniones_IdActaArchivo
+    ON dbo.Reuniones(IdActaArchivo)
+    INCLUDE (IdProyecto, Titulo, Estado, FechaReunion);
+GO
+
 CREATE TABLE dbo.VersionesArchivo (
     Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_VersionesArchivo PRIMARY KEY DEFAULT NEWID(),
     IdArchivo UNIQUEIDENTIFIER NOT NULL,

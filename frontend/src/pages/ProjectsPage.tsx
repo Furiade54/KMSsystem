@@ -30,7 +30,6 @@ import {
 import {
   toggleFavorite,
   type FavoriteResourceType,
-  checkFavorite,
 } from '../services/favorites.service'
 
 type ViewMode = 'grid' | 'list'

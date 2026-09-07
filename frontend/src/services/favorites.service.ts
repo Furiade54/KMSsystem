@@ -1,5 +1,5 @@
 import api from './api'
-import type { ApiResponse, ResourceType } from '../../../packages/shared-types/src'
+import type { ApiResponse } from '../../../packages/shared-types/src'
 
 export type FavoriteResourceType = 'PROJECT' | 'FOLDER' | 'FILE'
 

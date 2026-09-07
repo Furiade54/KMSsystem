@@ -24,12 +24,8 @@ function getAuth(req: Request) {
   return (req as unknown as { auth: { organizationId: string; userId: string; email?: string } }).auth
 }
 
-function toBool(v: unknown) {
-  if (v === 'true' || v === '1' || v === true || v === 1) return true
-  if (v === 'false' || v === '0' || v === false || v === 0) return false
-  return null
-}
-
+function validateResourceType(value: unknown, required?: true): 'PROJECT' | 'FOLDER' | 'FILE'
+function validateResourceType(value: unknown, required: false): 'PROJECT' | 'FOLDER' | 'FILE' | null
 function validateResourceType(value: unknown, required = true) {
   const s = value == null ? '' : String(value).trim().toUpperCase()
   if (!s) {

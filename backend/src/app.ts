@@ -19,6 +19,7 @@ import organizationsRouter from './modules/organizations/organizations.routes'
 import rolesRouter from './modules/roles/roles.routes'
 import revisionsRouter from './modules/revisions/revisions.routes'
 import sharesRouter from './modules/shares/shares.routes'
+import meetingsRouter from './modules/meetings/meetings.routes'
 import { resourcePermissionsRouter } from './modules/resource-permissions/resource-permissions.routes'
 
 const app = express()
@@ -62,6 +63,7 @@ app.use('/api/auth', authRouter)
 app.use('/api/organizacion', organizationsRouter)
 app.use('/api/usuarios', usersRouter)
 app.use('/api/roles', rolesRouter)
+app.use('/api/projects/:projectId/reuniones', meetingsRouter)
 app.use('/api/projects', projectsRouter)
 app.use('/api/archivos', filesRouter)
 app.use('/api/carpetas', foldersRouter)

@@ -27,6 +27,7 @@ import {
   Check,
   Loader2,
   Upload,
+  Download,
   Image as ImageIcon,
   FileSpreadsheet,
   Presentation,
@@ -41,6 +42,7 @@ import {
   UserMinus,
   CheckCircle2,
   XCircle,
+  Unlink,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -84,8 +86,8 @@ import {
   updateFolder,
 } from '../services/folders.service'
 import {
-  ApiFile,
   ApiFileType,
+  type ApiFile,
   commentFile as apiCommentFile,
   copyFile,
   deleteFile,
@@ -96,6 +98,23 @@ import {
   updateFile,
   uploadFile,
 } from '../services/files.service'
+import {
+  ApiMeeting,
+  ApiMeetingStatus,
+  CreateMeetingPayload,
+  UpdateMeetingPayload,
+  createMeeting as apiCreateMeeting,
+  deleteMeeting as apiDeleteMeeting,
+  fetchMeetings,
+  updateMeeting as apiUpdateMeeting,
+} from '../services/meetings.service'
+import {
+  fetchMeetingParticipants,
+  upsertMeetingParticipant,
+  setMeetingAttendance,
+  removeMeetingParticipant,
+  setMeetingMinutesFile as apiSetMeetingMinutesFile,
+} from '../services/meeting-details.service'
 
 const tabs = [
   { id: 'docs', label: 'Documentos', icon: FileText },
@@ -288,6 +307,31 @@ function ProjectDetailPage() {
   const [masterSelectedFolderId, setMasterSelectedFolderId] = useState<string | null>(null)
   const [masterSelectedFileId, setMasterSelectedFileId] = useState<string | null>(null)
   const [showConfirmClearMaster, setShowConfirmClearMaster] = useState(false)
+  const [meetingsPage, setMeetingsPage] = useState(1)
+  const [meetingsPageSize] = useState(20)
+  const [meetingsSearch, setMeetingsSearch] = useState('')
+  const [meetingsStatusFilter, setMeetingsStatusFilter] = useState<ApiMeetingStatus | ''>('')
+  const [showNewMeeting, setShowNewMeeting] = useState(false)
+  const [editingMeeting, setEditingMeeting] = useState<ApiMeeting | null>(null)
+  const [newMeetingForm, setNewMeetingForm] = useState<CreateMeetingPayload & { errors: Record<string, string> }>({
+    title: '',
+    description: null,
+    meetingAt: null,
+    status: 'SCHEDULED',
+    errors: {},
+  })
+  const [confirmDeleteMeeting, setConfirmDeleteMeeting] = useState<ApiMeeting | null>(null)
+  const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null)
+  const [meetingPanelTab, setMeetingPanelTab] = useState<'participants' | 'file'>('participants')
+  const [showAddMeetingParticipant, setShowAddMeetingParticipant] = useState<string | null>(null)
+  const [newParticipantUserId, setNewParticipantUserId] = useState('')
+  const [newParticipantRole, setNewParticipantRole] = useState('')
+  const [newParticipantAttended, setNewParticipantAttended] = useState(false)
+  const [showFilePicker, setShowFilePicker] = useState(false)
+  const [filePickerSearch, setFilePickerSearch] = useState('')
+  const [removeMeetingFileId, setRemoveMeetingFileId] = useState<string | null>(null)
+  const [isUploadingActa, setIsUploadingActa] = useState(false)
+  const minutesUploadInputRef = useRef<HTMLInputElement | null>(null)
   const TREE_MIN_W = 180
   const TREE_MAX_W = 420
 
@@ -443,6 +487,60 @@ function ProjectDetailPage() {
     return chain
   }, [selectedFolderId, flatFolderById])
 
+  const meetingsQuery = useQuery({
+    queryKey: [
+      'project',
+      'meetings',
+      projectId,
+      {
+        page: meetingsPage,
+        pageSize: meetingsPageSize,
+        search: meetingsSearch.trim(),
+        status: meetingsStatusFilter || undefined,
+      },
+    ],
+    queryFn: () =>
+      fetchMeetings({
+        projectId,
+        page: meetingsPage,
+        pageSize: meetingsPageSize,
+        search: meetingsSearch.trim() || undefined,
+        status: meetingsStatusFilter || undefined,
+      }),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  const meetingParticipantsQuery = useQuery({
+    queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId],
+    queryFn: () =>
+      fetchMeetingParticipants({
+        projectId,
+        meetingId: expandedMeetingId as string,
+        pageSize: 200,
+      }),
+    enabled: Boolean(projectId) && Boolean(expandedMeetingId) && meetingPanelTab === 'participants',
+    staleTime: 20_000,
+    retry: 1,
+  })
+
+  const meetingFilesQuery = useQuery({
+    queryKey: ['project', 'meeting', 'file-picker', 'files', projectId, filePickerSearch.trim()],
+    queryFn: async () => {
+      const page = await fetchFiles({
+        projectId,
+        folderId: undefined,
+        page: 1,
+        pageSize: 500,
+        search: filePickerSearch.trim() || undefined,
+      })
+      return page.items
+    },
+    enabled: Boolean(projectId) && (showFilePicker || Boolean(expandedMeetingId && meetingPanelTab === 'file')),
+    staleTime: 60_000,
+  })
+
   const detailIsLoading = projectQuery.isLoading && projectQuery.fetchStatus !== 'idle'
   const detailIs404 = projectQuery.isError && (projectQuery.error as any)?.message?.toLowerCase().includes('no encontrado')
 
@@ -459,6 +557,10 @@ function ProjectDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+    queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
+    if (expandedMeetingId) {
+      queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId] })
+    }
     queryClient.invalidateQueries({ queryKey: ['projects'] })
   }
 
@@ -538,6 +640,52 @@ function ProjectDetailPage() {
     if (authUser.isOrgAdmin) return true
     return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
   }, [project, authUser])
+
+  const canEditMeetings = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const canDeleteMeetings = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  function meetingStatusLabel(status: ApiMeetingStatus): string {
+    switch (status) {
+      case 'SCHEDULED':
+        return 'Programada'
+      case 'IN_PROGRESS':
+        return 'En curso'
+      case 'HELD':
+        return 'Realizada'
+      case 'COMPLETED':
+        return 'Completada'
+      case 'CANCELLED':
+        return 'Cancelada'
+      default:
+        return status
+    }
+  }
+
+  function meetingStatusBadgeClass(status: ApiMeetingStatus): string {
+    switch (status) {
+      case 'SCHEDULED':
+        return 'bg-brand-500/20 text-brand-600 dark:text-brand-300'
+      case 'IN_PROGRESS':
+        return 'bg-status-review/20 text-amber-700 dark:text-amber-300'
+      case 'HELD':
+        return 'bg-status-approved/20 text-emerald-700 dark:text-emerald-300'
+      case 'COMPLETED':
+        return 'bg-status-approved/25 text-emerald-700 dark:text-emerald-300'
+      case 'CANCELLED':
+        return 'bg-status-blocked/20 text-rose-700 dark:text-rose-300'
+      default:
+        return 'bg-surface-secondary text-muted-foreground'
+    }
+  }
 
   const designateMasterMutation = useMutation({
     mutationFn: (payload: DesignateMasterDocPayload) => designateProjectMaster(projectId, payload),
@@ -663,6 +811,234 @@ function ProjectDetailPage() {
   })
 
   const [confirmRemoveMember, setConfirmRemoveMember] = useState<ProjectMember | null>(null)
+
+  const openNewMeeting = () => {
+    setNewMeetingForm({
+      title: '',
+      description: null,
+      meetingAt: null,
+      status: 'SCHEDULED',
+      errors: {},
+    })
+    setEditingMeeting(null)
+    setShowNewMeeting(true)
+  }
+
+  const openEditMeeting = (meeting: ApiMeeting) => {
+    setEditingMeeting(meeting)
+    setNewMeetingForm({
+      title: meeting.title,
+      description: meeting.description ?? null,
+      meetingAt: meeting.meetingAt ?? null,
+      status: meeting.status,
+      errors: {},
+    })
+    setShowNewMeeting(true)
+  }
+
+  const createMeetingMutation = useMutation({
+    mutationFn: (payload: CreateMeetingPayload) => apiCreateMeeting(projectId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
+      invalidateDetail()
+      setShowNewMeeting(false)
+      setEditingMeeting(null)
+      setPageToast({
+        kind: 'success',
+        title: 'Reunión creada',
+        message: 'La reunión se registró correctamente en el proyecto.',
+      })
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Error desconocido'
+      setNewMeetingForm((prev) => ({ ...prev, errors: { _global: msg } }))
+    },
+  })
+
+  const updateMeetingMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; patch: UpdateMeetingPayload }) =>
+      apiUpdateMeeting(projectId, payload.meetingId, payload.patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
+      invalidateDetail()
+      setShowNewMeeting(false)
+      setEditingMeeting(null)
+      setPageToast({
+        kind: 'success',
+        title: 'Reunión actualizada',
+        message: 'Se guardaron los cambios de la reunión.',
+      })
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Error desconocido'
+      setNewMeetingForm((prev) => ({ ...prev, errors: { _global: msg } }))
+    },
+  })
+
+  const deleteMeetingMutation = useMutation({
+    mutationFn: (meetingId: string) => apiDeleteMeeting(projectId, meetingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
+      invalidateDetail()
+      setConfirmDeleteMeeting(null)
+      setPageToast({
+        kind: 'success',
+        title: 'Reunión eliminada',
+        message: 'La reunión se retiró del proyecto.',
+      })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo eliminar la reunión',
+        message:
+          err?.response?.data?.message ||
+          err?.message ||
+          'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const handleSubmitMeeting = (e: React.FormEvent) => {
+    e.preventDefault()
+    const errors: Record<string, string> = {}
+    const title = newMeetingForm.title.trim()
+    if (title.length === 0) errors.title = 'El título es obligatorio'
+    else if (title.length > 255) errors.title = 'Máximo 255 caracteres'
+    if (newMeetingForm.meetingAt) {
+      const d = new Date(newMeetingForm.meetingAt)
+      if (Number.isNaN(d.getTime())) errors.meetingAt = 'Fecha inválida'
+    }
+    setNewMeetingForm((prev) => ({ ...prev, errors }))
+    if (Object.keys(errors).length) return
+    const payload: CreateMeetingPayload = {
+      title,
+      description: newMeetingForm.description ?? null,
+      meetingAt: newMeetingForm.meetingAt ?? null,
+      status: newMeetingForm.status,
+    }
+    if (editingMeeting) {
+      updateMeetingMutation.mutate({ meetingId: editingMeeting.id, patch: payload })
+    } else {
+      createMeetingMutation.mutate(payload)
+    }
+  }
+
+  const upsertMeetingParticipantMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; userId: string; roleName?: string | null; attended?: boolean }) =>
+      upsertMeetingParticipant(projectId, payload.meetingId, {
+      userId: payload.userId,
+      roleName: payload.roleName,
+      attended: payload.attended,
+    }),
+    onSuccess: () => {
+      if (expandedMeetingId) {
+        queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId] })
+      }
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo guardar el asistente',
+        message:
+          err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const setMeetingAttendanceMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; userId: string; attended: boolean }) =>
+      setMeetingAttendance(projectId, payload.meetingId, payload.userId, payload.attended),
+    onSuccess: () => {
+      if (expandedMeetingId) {
+        queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId] })
+      }
+    },
+  })
+
+  const removeMeetingParticipantMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; userId: string }) =>
+      removeMeetingParticipant(projectId, payload.meetingId, payload.userId),
+    onSuccess: () => {
+      if (expandedMeetingId) {
+        queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId] })
+      }
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo retirar el asistente',
+        message:
+          err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const setMeetingMinutesFileMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; minutesFileId: string | null }) =>
+      apiSetMeetingMinutesFile(projectId, payload.meetingId, payload.minutesFileId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo actualizar el archivo del acta',
+        message:
+          err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  async function handleUploadActa(ev: React.ChangeEvent<HTMLInputElement>, meetingId: string) {
+    const file = ev.target.files?.[0]
+    if (ev.target) ev.target.value = ''
+    if (!file) return
+    setIsUploadingActa(true)
+    try {
+      const uploaded = await uploadFile({ projectId, file })
+      await setMeetingMinutesFileMutation.mutateAsync({
+        meetingId,
+        minutesFileId: uploaded.id,
+      })
+      setPageToast({
+        kind: 'success',
+        title: 'Acta subida y vinculada',
+        message: `“${uploaded.name}” se cargó correctamente y quedó enlazado a esta reunión.`,
+      })
+    } catch (err: any) {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo subir el acta',
+        message:
+          err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    } finally {
+      setIsUploadingActa(false)
+    }
+  }
+
+  function handleAddMeetingParticipant(meetingId: string) {
+    const uid = newParticipantUserId.trim()
+    if (!uid) {
+      setPageToast({ kind: 'error', title: 'Usuario requerido', message: 'Selecciona un usuario para agregar como asistente.' })
+      return
+    }
+    upsertMeetingParticipantMutation.mutate({
+      meetingId,
+      userId: uid,
+      roleName: newParticipantRole.trim() || null,
+      attended: newParticipantAttended,
+    }, {
+      onSuccess: () => {
+        setShowAddMeetingParticipant(null)
+        setNewParticipantUserId('')
+        setNewParticipantRole('')
+        setNewParticipantAttended(false)
+      },
+    })
+  }
 
   const updateRoleMutation = useMutation({
     mutationFn: (payload: { memberId: string; roleName: string | null }) =>
@@ -2209,7 +2585,604 @@ function ProjectDetailPage() {
         </div>
       )}
 
-      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && (
+      {activeTab === 'meetings' && (
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-4 md:p-6">
+          <div className="max-w-3xl mx-auto space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <h2 className="text-lg font-semibold text-foreground">Reuniones del proyecto</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:w-60">
+                  <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={meetingsSearch}
+                    onChange={(e) => {
+                      setMeetingsSearch(e.target.value)
+                      setMeetingsPage(1)
+                    }}
+                    placeholder="Buscar reuniones..."
+                    className="w-full h-8 pl-7 pr-2 text-[11.5px] rounded-md bg-surface-secondary/60 border border-border/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60"
+                  />
+                </div>
+                <select
+                  value={meetingsStatusFilter}
+                  onChange={(e) => {
+                    setMeetingsStatusFilter((e.target.value || '') as ApiMeetingStatus | '')
+                    setMeetingsPage(1)
+                  }}
+                  className="h-8 px-2 text-[11.5px] rounded-md bg-surface-secondary/60 border border-border/80 text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60"
+                >
+                  <option value="">Todos los estados</option>
+                  <option value="SCHEDULED">Programadas</option>
+                  <option value="IN_PROGRESS">En curso</option>
+                  <option value="HELD">Realizadas</option>
+                  <option value="COMPLETED">Completadas</option>
+                  <option value="CANCELLED">Canceladas</option>
+                </select>
+                {canEditMeetings && (
+                  <button
+                    className="btn-primary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                    onClick={openNewMeeting}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline ml-1.5">Nueva reunión</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="card divide-y divide-border overflow-hidden">
+              {meetingsQuery.isLoading && meetingsQuery.fetchStatus !== 'idle' ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="p-4 flex items-start gap-4 animate-pulse">
+                    <div className="w-10 h-10 rounded-lg bg-surface-secondary" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-56 bg-surface-secondary rounded" />
+                      <div className="h-3 w-80 bg-surface-secondary rounded" />
+                      <div className="h-3 w-36 bg-surface-secondary rounded" />
+                    </div>
+                    <div className="h-5 w-20 bg-surface-secondary rounded" />
+                  </div>
+                ))
+              ) : meetingsQuery.isError ? (
+                <div className="p-6 text-center text-muted-foreground">
+                  No se pudieron cargar las reuniones. Inténtalo de nuevo.
+                </div>
+              ) : !meetingsQuery.data?.items.length ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  Aún no hay reuniones.
+                  {canEditMeetings ? (
+                    <div className="mt-3">
+                      <button
+                        className="btn-secondary text-[11.5px] px-2.5 h-8 inline-flex items-center"
+                        onClick={openNewMeeting}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Crear la primera reunión
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                meetingsQuery.data.items.map((meeting) => (
+                  <div key={meeting.id} className="flex flex-col">
+                    <div className="p-4 flex items-start gap-4">
+                      <button
+                        type="button"
+                        className="w-10 h-10 rounded-lg bg-brand-500/15 text-brand-600 dark:text-brand-300 flex items-center justify-center shrink-0 ring-1 ring-black/5 hover:bg-brand-500/25 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                        aria-label={expandedMeetingId === meeting.id ? 'Colapsar detalles' : 'Ver detalles de la reunión'}
+                        onClick={() => {
+                          setExpandedMeetingId((prev) => (prev === meeting.id ? null : meeting.id))
+                          setMeetingPanelTab('participants')
+                        }}
+                      >
+                        {expandedMeetingId === meeting.id ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-medium text-foreground truncate">
+                            {meeting.title || 'Sin título'}
+                          </h3>
+                          <span
+                            className={clsx(
+                              'inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full',
+                              meetingStatusBadgeClass(meeting.status)
+                            )}
+                          >
+                            {meetingStatusLabel(meeting.status)}
+                          </span>
+                          {meeting.minutesFileId ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-black/5">
+                              <FileCheck2 className="w-3 h-3" />
+                              Acta archivo vinculada
+                            </span>
+                          ) : null}
+                        </div>
+                        {meeting.description ? (
+                          <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                            {meeting.description}
+                          </p>
+                        ) : null}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80 tabular-nums">
+                          <span>
+                            {meeting.meetingAt
+                              ? `${formatRelativeTime(meeting.meetingAt)} · ${new Date(meeting.meetingAt).toLocaleString()}`
+                              : 'Fecha por definir'}
+                          </span>
+                          <span>Creada {formatRelativeTime(meeting.createdAt)}</span>
+                          {meeting.updatedAt && meeting.updatedAt !== meeting.createdAt ? (
+                            <span>Actualizada {formatRelativeTime(meeting.updatedAt)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canEditMeetings && (
+                          <button
+                            className="btn-ghost p-1 rounded-md h-8 w-8 text-muted-foreground hover:text-brand-600 hover:bg-brand-500/10 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus:outline-none"
+                            title="Editar reunión"
+                            onClick={() => openEditMeeting(meeting)}
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {canDeleteMeetings && (
+                          <button
+                            className="btn-ghost p-1 rounded-md h-8 w-8 text-muted-foreground hover:text-status-blocked hover:bg-status-blocked/10 focus-visible:ring-2 focus-visible:ring-status-blocked/50 focus:outline-none"
+                            title="Eliminar reunión"
+                            onClick={() => setConfirmDeleteMeeting(meeting)}
+                          >
+                            {deleteMeetingMutation.isPending && confirmDeleteMeeting?.id === meeting.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {expandedMeetingId === meeting.id ? (
+                      <div className="border-t border-border bg-surface-secondary/25 px-4 pb-4">
+                        <div className="flex flex-wrap items-center gap-1 pt-3 pb-3 border-b border-border/70">
+                          <button
+                            type="button"
+                            className={clsx(
+                              'h-7 px-3 text-[11.5px] rounded-md transition-colors',
+                              meetingPanelTab === 'participants'
+                                ? 'bg-brand-500/20 text-brand-700 dark:text-brand-200 ring-1 ring-brand-500/40'
+                                : 'text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
+                            )}
+                            onClick={() => setMeetingPanelTab('participants')}
+                          >
+                            <Users className="w-3.5 h-3.5 inline mr-1.5" />
+                            Asistentes
+                          </button>
+                          <button
+                            type="button"
+                            className={clsx(
+                              'h-7 px-3 text-[11.5px] rounded-md transition-colors',
+                              meetingPanelTab === 'file'
+                                ? 'bg-brand-500/20 text-brand-700 dark:text-brand-200 ring-1 ring-brand-500/40'
+                                : 'text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
+                            )}
+                            onClick={() => setMeetingPanelTab('file')}
+                          >
+                            <FileCheck2 className="w-3.5 h-3.5 inline mr-1.5" />
+                            Acta archivo
+                          </button>
+                        </div>
+
+                        {meetingPanelTab === 'participants' && (
+                          <div className="pt-3 space-y-2">
+                            {canEditMeetings && showAddMeetingParticipant === meeting.id ? (
+                              <div className="card overflow-hidden p-3 space-y-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div className="sm:col-span-2">
+                                    <label className="block text-[11px] font-semibold text-foreground mb-1">
+                                      Miembro del proyecto
+                                    </label>
+                                    <select
+                                      value={newParticipantUserId}
+                                      onChange={(e) => setNewParticipantUserId(e.target.value)}
+                                      className="w-full h-8 px-2 text-[11.5px] rounded-md bg-surface-secondary/70 border border-border/80 text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+                                    >
+                                      <option value="">Seleccionar usuario…</option>
+                                      {project ? ((membersQuery.data?.items ?? []) as ProjectMember[]).map((m) => (
+                                        <option key={m.userId} value={m.userId}>
+                                          {m.fullName || m.email || m.userId}{m.roleName ? ` (${m.roleName})` : ''}
+                                        </option>
+                                      )) : null}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground mb-1">
+                                      Rol
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newParticipantRole}
+                                      onChange={(e) => setNewParticipantRole(e.target.value)}
+                                      placeholder="Ej: Moderador"
+                                      className="w-full h-8 px-2 text-[11.5px] rounded-md bg-surface-secondary/70 border border-border/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <label className="inline-flex items-center gap-2 text-[11.5px] text-foreground cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={newParticipantAttended}
+                                      onChange={(e) => setNewParticipantAttended(e.target.checked)}
+                                      className="accent-brand-500"
+                                    />
+                                    Ya asistió
+                                  </label>
+                                  <div className="ml-auto flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      className="btn-secondary text-[11.5px] h-8 px-2"
+                                      onClick={() => {
+                                        setShowAddMeetingParticipant(null)
+                                        setNewParticipantUserId('')
+                                        setNewParticipantRole('')
+                                        setNewParticipantAttended(false)
+                                      }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-primary text-[11.5px] h-8 px-2"
+                                      onClick={() => handleAddMeetingParticipant(meeting.id)}
+                                      disabled={upsertMeetingParticipantMutation.isPending}
+                                    >
+                                      {upsertMeetingParticipantMutation.isPending ? (
+                                        <>
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          <span className="ml-1.5">Guardando…</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Plus className="w-3.5 h-3.5" />
+                                          <span className="ml-1.5">Agregar</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              canEditMeetings && (
+                                <div className="flex items-center justify-between">
+                                  <p className="text-[11.5px] text-muted-foreground">
+                                    Usa el botón para agregar asistentes de los miembros del proyecto.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-[11.5px] h-8 px-2"
+                                    onClick={() => {
+                                      setShowAddMeetingParticipant(meeting.id)
+                                      setNewParticipantUserId('')
+                                      setNewParticipantRole('')
+                                      setNewParticipantAttended(false)
+                                    }}
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span className="ml-1.5">Agregar asistente</span>
+                                  </button>
+                                </div>
+                              )
+                            )}
+
+                            {meetingParticipantsQuery.isLoading ? (
+                              Array.from({ length: 3 }).map((_, i) => (
+                                <div key={i} className="card p-3 flex items-center gap-3 animate-pulse">
+                                  <div className="w-8 h-8 rounded-full bg-surface-secondary" />
+                                  <div className="flex-1 space-y-2">
+                                    <div className="h-3 w-52 bg-surface-secondary rounded" />
+                                    <div className="h-2.5 w-40 bg-surface-secondary rounded" />
+                                  </div>
+                                </div>
+                              ))
+                            ) : meetingParticipantsQuery.isError ? (
+                              <div className="text-[11.5px] text-muted-foreground text-center p-3">
+                                No se pudieron cargar los asistentes.
+                              </div>
+                            ) : !meetingParticipantsQuery.data?.items.length ? (
+                              <div className="text-[11.5px] text-muted-foreground text-center p-3">
+                                No hay asistentes registrados.
+                              </div>
+                            ) : (
+                              <div className="card divide-y divide-border overflow-hidden">
+                                {meetingParticipantsQuery.data.items.map((p) => (
+                                  <div key={`${p.meetingId}-${p.userId}`} className="px-3 py-2 flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-brand-500/15 text-brand-700 dark:text-brand-200 flex items-center justify-center ring-1 ring-black/5 text-[11.5px] font-semibold shrink-0">
+                                      {p.userFullName
+                                        ? p.userFullName
+                                            .split(' ')
+                                            .slice(0, 2)
+                                            .map((s) => s[0]?.toUpperCase() ?? '')
+                                            .join('')
+                                        : (p.userEmail || 'U').slice(0, 1).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="text-[12.5px] font-medium text-foreground truncate">
+                                          {p.userFullName || p.userEmail || p.userId}
+                                        </p>
+                                        {p.roleName ? (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-secondary text-muted-foreground ring-1 ring-black/5">
+                                            {p.roleName}
+                                          </span>
+                                        ) : null}
+                                        <span
+                                          className={clsx(
+                                            'text-[10px] px-1.5 py-0.5 rounded-full',
+                                            p.attended
+                                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-black/5'
+                                              : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-black/5'
+                                          )}
+                                        >
+                                          {p.attended ? 'Asistió' : 'Pendiente'}
+                                        </span>
+                                      </div>
+                                      {p.userEmail ? (
+                                        <p className="text-[11px] text-muted-foreground truncate">{p.userEmail}</p>
+                                      ) : null}
+                                    </div>
+                                    {canEditMeetings ? (
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          className={clsx(
+                                            'h-7 px-2 text-[11px] rounded-md ring-1 ring-black/5',
+                                            p.attended
+                                              ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25'
+                                              : 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25'
+                                          )}
+                                          disabled={setMeetingAttendanceMutation.isPending}
+                                          onClick={() =>
+                                            setMeetingAttendanceMutation.mutate({
+                                              meetingId: meeting.id,
+                                              userId: p.userId,
+                                              attended: !p.attended,
+                                            })
+                                          }
+                                        >
+                                          Marcar {p.attended ? 'pendiente' : 'asistió'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn-ghost h-8 w-8 p-1 rounded-md text-muted-foreground hover:text-status-blocked hover:bg-status-blocked/10"
+                                          title="Retirar asistente"
+                                          onClick={() =>
+                                            removeMeetingParticipantMutation.mutate({
+                                              meetingId: meeting.id,
+                                              userId: p.userId,
+                                            })
+                                          }
+                                        >
+                                          {removeMeetingParticipantMutation.isPending ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <UserMinus className="w-4 h-4" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {meetingPanelTab === 'file' && (
+                          <div className="pt-3 space-y-2">
+                            <div className="card overflow-hidden">
+                              <div className="px-3 py-2 border-b border-border bg-surface-secondary/40 flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <FileCheck2 className="w-4 h-4 text-brand-600 shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-[11.5px] font-medium text-foreground">Archivo del acta</p>
+                                    <p className="text-[10.5px] text-muted-foreground truncate">
+                                      Campo <code className="bg-surface-secondary/80 px-1 rounded">IdActaArchivo</code> en la reunión
+                                    </p>
+                                  </div>
+                                  <input
+                                    ref={minutesUploadInputRef}
+                                    type="file"
+                                    hidden
+                                    onChange={(e) => handleUploadActa(e, meeting.id)}
+                                  />
+                                </div>
+                                {canEditMeetings ? (
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      className="btn-primary text-[11.5px] h-8 px-2"
+                                      onClick={() => {
+                                        minutesUploadInputRef.current?.click()
+                                      }}
+                                      disabled={isUploadingActa || setMeetingMinutesFileMutation.isPending}
+                                    >
+                                      {isUploadingActa ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Upload className="w-3.5 h-3.5" />
+                                      )}
+                                      <span className="ml-1.5">
+                                        {isUploadingActa ? 'Subiendo…' : 'Subir acta'}
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-secondary text-[11.5px] h-8 px-2"
+                                      onClick={() => {
+                                        setFilePickerSearch('')
+                                        setShowFilePicker(true)
+                                      }}
+                                      disabled={isUploadingActa || setMeetingMinutesFileMutation.isPending}
+                                    >
+                                      <Link2 className="w-3.5 h-3.5" />
+                                      <span className="ml-1.5">Seleccionar archivo</span>
+                                    </button>
+                                    {meeting.minutesFileId ? (
+                                      <button
+                                        type="button"
+                                        className="btn-ghost text-[11.5px] h-8 px-2 text-status-blocked hover:bg-status-blocked/10"
+                                        onClick={() => setRemoveMeetingFileId(meeting.id)}
+                                        disabled={isUploadingActa || setMeetingMinutesFileMutation.isPending}
+                                      >
+                                        {setMeetingMinutesFileMutation.isPending && removeMeetingFileId === meeting.id ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <Unlink className="w-3.5 h-3.5" />
+                                        )}
+                                        <span className="ml-1.5">Desvincular</span>
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="px-3 py-2.5">
+                                {(() => {
+                                  const current =
+                                    meeting.minutesFileId
+                                      ? (meetingFilesQuery.data ?? []).find((f) => f.id === meeting.minutesFileId)
+                                      : undefined
+                                  if (!meeting.minutesFileId) {
+                                    return (
+                                      <p className="text-[11.5px] text-muted-foreground">
+                                        No hay archivo vinculado. Usa “Subir acta” para cargar uno nuevo, o “Seleccionar archivo” para enlazar un archivo existente del proyecto.
+                                      </p>
+                                    )
+                                  }
+                                  if (current) {
+                                    return (
+                                      <div className="flex items-center gap-3">
+                                        <div
+                                          className={clsx(
+                                            'w-9 h-9 rounded-md flex items-center justify-center shrink-0 ring-1 ring-black/5 shadow-sm',
+                                            colorForKind(fileKind(current))
+                                          )}
+                                        >
+                                          {(() => {
+                                            const Ic = iconForKind(fileKind(current))
+                                            return <Ic className="w-4 h-4 text-white/95" />
+                                          })()}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-[12.5px] font-medium text-foreground truncate">
+                                            {current.name}
+                                          </p>
+                                          <p className="text-[11px] text-muted-foreground truncate">
+                                            {typeof current.sizeBytes === 'number' ? formatBytes(current.sizeBytes) : '—'}
+                                            {current.extension ? ` · ${current.extension}` : ''}
+                                            {current.createdAt
+                                              ? ` · Subido ${formatRelativeTime(current.createdAt)}`
+                                              : ''}
+                                          </p>
+                                        </div>
+                                        {current.downloadUrl ? (
+                                          <a
+                                            href={current.downloadUrl}
+                                            download={current.name}
+                                            className="btn-secondary text-[11.5px] h-8 px-2 shrink-0 no-underline"
+                                          >
+                                            <Download className="w-3.5 h-3.5 inline mr-1" />
+                                            Descargar
+                                          </a>
+                                        ) : null}
+                                      </div>
+                                    )
+                                  }
+                                  return (
+                                    <p className="text-[11.5px] text-muted-foreground">
+                                      Archivo vinculado ({String(meeting.minutesFileId).slice(0, 8)}…) pero no está visible en este proyecto.
+                                      Puede haber sido movido o requiere volver a enlazarlo.
+                                    </p>
+                                  )
+                                })()}
+                              </div>
+                            </div>
+
+                            {removeMeetingFileId ? (
+                              <div className="card overflow-hidden p-3 flex items-center justify-between bg-status-blocked/5">
+                                <p className="text-[11.5px] text-foreground">
+                                  ¿Desvincular el archivo del acta en esta reunión?
+                                </p>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-[11.5px] h-8 px-2"
+                                    onClick={() => setRemoveMeetingFileId(null)}
+                                    disabled={setMeetingMinutesFileMutation.isPending}
+                                  >
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-primary text-[11.5px] h-8 px-2"
+                                    onClick={() => {
+                                      if (!removeMeetingFileId) return
+                                      setMeetingMinutesFileMutation.mutate(
+                                        { meetingId: removeMeetingFileId, minutesFileId: null },
+                                        {
+                                          onSettled: () => setRemoveMeetingFileId(null),
+                                        }
+                                      )
+                                    }}
+                                    disabled={setMeetingMinutesFileMutation.isPending}
+                                  >
+                                    Sí, desvincular
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {meetingsQuery.data && meetingsQuery.data.totalPages > 1 ? (
+              <div className="flex items-center justify-between text-[11.5px] text-muted-foreground">
+                <span>
+                  Total {meetingsQuery.data.total} reuniones · Página {meetingsQuery.data.page} de{' '}
+                  {meetingsQuery.data.totalPages}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="btn-secondary text-[11.5px] h-8 px-2"
+                    onClick={() => setMeetingsPage((p) => Math.max(1, p - 1))}
+                    disabled={meetingsPage <= 1}
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    className="btn-secondary text-[11.5px] h-8 px-2"
+                    onClick={() =>
+                      setMeetingsPage((p) => Math.min(meetingsQuery.data?.totalPages || p, p + 1))
+                    }
+                    disabled={meetingsPage >= (meetingsQuery.data?.totalPages || 1)}
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && (
         <div className="flex-1 flex items-center justify-center text-center p-8 overflow-y-auto">
           <div className="text-muted-foreground">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-surface-secondary flex items-center justify-center mb-4">
@@ -4045,6 +5018,309 @@ function ProjectDetailPage() {
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {showNewMeeting && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (createMeetingMutation.isPending || updateMeetingMutation.isPending) return
+            setShowNewMeeting(false)
+            setEditingMeeting(null)
+          }}
+        >
+          <form
+            onSubmit={handleSubmitMeeting}
+            className="card w-full max-w-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-surface-secondary/40">
+              <h2 className="text-[15px] font-semibold text-foreground">
+                {editingMeeting ? 'Editar reunión' : 'Nueva reunión'}
+              </h2>
+              <button
+                type="button"
+                className="btn-ghost p-1 rounded-md h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-brand-500/60 focus:outline-none"
+                onClick={() => {
+                  if (createMeetingMutation.isPending || updateMeetingMutation.isPending) return
+                  setShowNewMeeting(false)
+                  setEditingMeeting(null)
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3.5">
+              <div>
+                <label className="block text-[11.5px] font-semibold text-foreground mb-1">
+                  Título <span className="text-status-blocked">*</span>
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={newMeetingForm.title}
+                  onChange={(e) =>
+                    setNewMeetingForm((f) => ({ ...f, title: e.target.value }))
+                  }
+                  placeholder="Ej: Kick-off del proyecto"
+                  className="w-full h-9 px-3 rounded-md text-[12.5px] bg-surface-secondary/60 border border-border/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60"
+                />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-semibold text-foreground mb-1">
+                  Descripción
+                </label>
+                <textarea
+                  rows={3}
+                  value={newMeetingForm.description || ''}
+                  onChange={(e) =>
+                    setNewMeetingForm((f) => ({ ...f, description: e.target.value }))
+                  }
+                  placeholder="Agenda, puntos clave, contexto..."
+                  className="w-full px-3 py-2 rounded-md text-[12.5px] bg-surface-secondary/60 border border-border/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60 resize-y"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-foreground mb-1">
+                    Fecha y hora
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newMeetingForm.meetingAt || ''}
+                    onChange={(e) =>
+                      setNewMeetingForm((f) => ({ ...f, meetingAt: e.target.value || undefined }))
+                    }
+                    className="w-full h-9 px-2.5 rounded-md text-[12.5px] bg-surface-secondary/60 border border-border/80 text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-foreground mb-1">
+                    Estado
+                  </label>
+                  <select
+                    value={newMeetingForm.status || 'SCHEDULED'}
+                    onChange={(e) =>
+                      setNewMeetingForm((f) => ({ ...f, status: e.target.value as ApiMeetingStatus }))
+                    }
+                    className="w-full h-9 px-2 rounded-md text-[12.5px] bg-surface-secondary/60 border border-border/80 text-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60"
+                  >
+                    <option value="SCHEDULED">Programada</option>
+                    <option value="IN_PROGRESS">En curso</option>
+                    <option value="HELD">Realizada</option>
+                    <option value="COMPLETED">Completada</option>
+                    <option value="CANCELLED">Cancelada</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                onClick={() => {
+                  if (createMeetingMutation.isPending || updateMeetingMutation.isPending) return
+                  setShowNewMeeting(false)
+                  setEditingMeeting(null)
+                }}
+                disabled={createMeetingMutation.isPending || updateMeetingMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="btn-primary text-sm"
+                disabled={createMeetingMutation.isPending || updateMeetingMutation.isPending}
+              >
+                {createMeetingMutation.isPending || updateMeetingMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {editingMeeting ? 'Guardando…' : 'Creando…'}
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    {editingMeeting ? 'Guardar' : 'Crear reunión'}
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {confirmDeleteMeeting && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (deleteMeetingMutation.isPending) return
+            setConfirmDeleteMeeting(null)
+          }}
+        >
+          <div className="card w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-xl bg-status-blocked/15 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-status-blocked" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-semibold text-foreground">Eliminar reunión</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    ¿Estás seguro de eliminar{' '}
+                    <strong className="text-foreground">
+                      {confirmDeleteMeeting.title || 'esta reunión'}
+                    </strong>
+                    ? Esta acción no se puede deshacer.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
+              <button
+                className="btn-secondary text-sm"
+                onClick={() => setConfirmDeleteMeeting(null)}
+                disabled={deleteMeetingMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn-primary text-sm"
+                onClick={() => {
+                  if (!confirmDeleteMeeting) return
+                  deleteMeetingMutation.mutate(confirmDeleteMeeting.id, {
+                    onSettled: () => setConfirmDeleteMeeting(null),
+                  })
+                }}
+                disabled={deleteMeetingMutation.isPending}
+              >
+                {deleteMeetingMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Eliminando…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Sí, eliminar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFilePicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (setMeetingMinutesFileMutation.isPending) return
+            setShowFilePicker(false)
+            setFilePickerSearch('')
+          }}
+        >
+          <div className="card w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-surface-secondary/40">
+              <div>
+                <h2 className="text-[15px] font-semibold text-foreground">Seleccionar archivo del acta</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Escoge un archivo existente del proyecto para enlazarlo como acta de la reunión.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost p-1 rounded-md h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-brand-500/60 focus:outline-none"
+                onClick={() => {
+                  if (setMeetingMinutesFileMutation.isPending) return
+                  setShowFilePicker(false)
+                  setFilePickerSearch('')
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-4 pt-3 pb-2 border-b border-border/70">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={filePickerSearch}
+                  onChange={(e) => setFilePickerSearch(e.target.value)}
+                  placeholder="Buscar por nombre de archivo..."
+                  className="w-full h-8 pl-7 pr-2 text-[11.5px] rounded-md bg-surface-secondary/70 border border-border/80 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1">
+              {meetingFilesQuery.isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="p-2.5 flex items-center gap-3 animate-pulse">
+                    <div className="w-8 h-8 rounded-md bg-surface-secondary" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-5/6 bg-surface-secondary rounded" />
+                      <div className="h-2.5 w-2/3 bg-surface-secondary rounded" />
+                    </div>
+                  </div>
+                ))
+              ) : meetingFilesQuery.isError ? (
+                <div className="p-5 text-center text-[11.5px] text-muted-foreground">
+                  No se pudieron cargar los archivos.
+                </div>
+              ) : !(meetingFilesQuery.data ?? []).length ? (
+                <div className="p-5 text-center text-[11.5px] text-muted-foreground">
+                  No hay archivos en este proyecto. Sube primero el archivo en la pestaña Documentos.
+                </div>
+              ) : (
+                (meetingFilesQuery.data ?? []).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      if (!expandedMeetingId || setMeetingMinutesFileMutation.isPending) return
+                      setMeetingMinutesFileMutation.mutate(
+                        { meetingId: expandedMeetingId, minutesFileId: f.id },
+                        {
+                          onSettled: () => {
+                            setShowFilePicker(false)
+                            setFilePickerSearch('')
+                          },
+                        }
+                      )
+                    }}
+                    disabled={setMeetingMinutesFileMutation.isPending}
+                    className="w-full text-left p-2.5 flex items-center gap-3 rounded-md hover:bg-surface-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 transition-colors"
+                  >
+                    <div
+                      className={clsx(
+                        'w-8 h-8 rounded-md flex items-center justify-center shrink-0 ring-1 ring-black/5 shadow-sm',
+                        colorForKind(fileKind(f))
+                      )}
+                    >
+                      {(() => {
+                        const Ic = iconForKind(fileKind(f))
+                        return <Ic className="w-4 h-4 text-white/95" />
+                      })()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12.5px] font-medium text-foreground truncate">{f.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {typeof f.sizeBytes === 'number' ? formatBytes(f.sizeBytes) : '—'}
+                        {f.extension ? ` · ${f.extension}` : ''}
+                        {f.createdAt ? ` · Subido ${formatRelativeTime(f.createdAt)}` : ''}
+                      </p>
+                    </div>
+                    {setMeetingMinutesFileMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Link2 className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
