@@ -69,13 +69,8 @@ import {
   type DesignateMasterDocPayload,
 } from '../services/projects.service'
 import {
-  type FavoriteState,
-  addFavorite,
-  removeFavorite,
   toggleFavorite,
-  listFavorites,
   type FavoriteResourceType,
-  type FavoriteItem,
 } from '../services/favorites.service'
 import {
   ApiFolder,
@@ -104,10 +99,10 @@ import {
 
 const tabs = [
   { id: 'docs', label: 'Documentos', icon: FileText },
-  { id: 'topics', label: 'Temas', icon: MessageSquare },
-  { id: 'meetings', label: 'Reuniones', icon: Calendar },
-  { id: 'contributions', label: 'Aportes', icon: Compass },
   { id: 'master', label: 'Documento maestro', icon: FileCheck2 },
+  { id: 'meetings', label: 'Reuniones', icon: Calendar },
+  { id: 'topics', label: 'Temas', icon: MessageSquare },
+  { id: 'contributions', label: 'Aportes', icon: Compass },
   { id: 'activity', label: 'Actividad', icon: Clock },
   { id: 'team', label: 'Equipo', icon: Users },
 ]
