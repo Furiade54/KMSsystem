@@ -32,6 +32,7 @@ import {
   Presentation,
   FileArchive,
   Copy,
+  ArrowRightLeft,
   FolderPlus,
   MessageCircle,
   Send,
@@ -274,6 +275,12 @@ function ProjectDetailPage() {
     y: number
   } | null>(null)
   const [docsAreaContextMenu, setDocsAreaContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const folderCtxRef = useRef<HTMLDivElement | null>(null)
+  const fileCtxRef = useRef<HTMLDivElement | null>(null)
+  const [ctxClamp, setCtxClamp] = useState<{
+    folder?: { left: number; top: number; maxH: number }
+    file?: { left: number; top: number; maxH: number }
+  }>({})
   const [treeWidth, setTreeWidth] = useState<number>(224)
   const [isResizing, setIsResizing] = useState(false)
   const [pageToast, setPageToast] = useState<{
@@ -1021,6 +1028,9 @@ function ProjectDetailPage() {
   })
 
   useEffect(() => {
+    if (!folderContextMenu && !fileContextMenu) {
+      setCtxClamp({})
+    }
     if (!folderContextMenu && !fileContextMenu && !docsAreaContextMenu) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1033,8 +1043,69 @@ function ProjectDetailPage() {
 
     window.addEventListener('keydown', handleKeyDown)
 
+    const measure = () => {
+      const MENU_W_MAX = 220
+      const PAD = 4
+      const next: typeof ctxClamp = {}
+      if (folderContextMenu && folderCtxRef.current) {
+        const el = folderCtxRef.current
+        const w = Math.max(el.offsetWidth || MENU_W_MAX, MENU_W_MAX)
+        const h = el.offsetHeight || 320
+        const maxH = window.innerHeight - PAD * 2
+        const availBelow = window.innerHeight - folderContextMenu.y - PAD
+        const availAbove = folderContextMenu.y - PAD
+        let top: number
+        if (h <= availBelow) {
+          top = folderContextMenu.y
+        } else if (h <= availAbove) {
+          top = folderContextMenu.y - h
+        } else {
+          top = Math.max(PAD, window.innerHeight - h - PAD)
+        }
+        const left = Math.min(
+          Math.max(PAD, folderContextMenu.x),
+          window.innerWidth - w - PAD
+        )
+        next.folder = { left, top, maxH }
+      }
+      if (fileContextMenu && fileCtxRef.current) {
+        const el = fileCtxRef.current
+        const w = Math.max(el.offsetWidth || MENU_W_MAX, MENU_W_MAX)
+        const h = el.offsetHeight || 360
+        const maxH = window.innerHeight - PAD * 2
+        const availBelow = window.innerHeight - fileContextMenu.y - PAD
+        const availAbove = fileContextMenu.y - PAD
+        let top: number
+        if (h <= availBelow) {
+          top = fileContextMenu.y
+        } else if (h <= availAbove) {
+          top = fileContextMenu.y - h
+        } else {
+          top = Math.max(PAD, window.innerHeight - h - PAD)
+        }
+        const left = Math.min(
+          Math.max(PAD, fileContextMenu.x),
+          window.innerWidth - w - PAD
+        )
+        next.file = { left, top, maxH }
+      }
+      if (Object.keys(next).length) setCtxClamp(next)
+    }
+
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(measure)
+      ;(measure as any)._raf2 = raf2
+    })
+
+    const onResize = () => measure()
+    window.addEventListener('resize', onResize)
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('resize', onResize)
+      cancelAnimationFrame(raf1)
+      const r2 = (measure as any)._raf2
+      if (r2) cancelAnimationFrame(r2)
     }
   }, [folderContextMenu, fileContextMenu, docsAreaContextMenu])
 
@@ -2647,11 +2718,11 @@ function ProjectDetailPage() {
 
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-2 font-medium">
-                    Acción
+                  <label className="block xs:text-xs text-muted-foreground mb-2 font-semibold uppercase tracking-wide">
+                    Acción (elige antes de confirmar)
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {(['copy', 'move'] as const).map((mode) => {
+                    {(['move', 'copy'] as const).map((mode) => {
                       const active = t.mode === mode
                       return (
                         <button
@@ -2662,26 +2733,52 @@ function ProjectDetailPage() {
                             setTransferDialog({ ...t, mode, error: '' })
                           }
                           className={clsx(
-                            'flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm transition-colors',
+                            'flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all',
                             active
-                              ? 'bg-brand-600/15 border-brand-500/60 text-brand-700 dark:text-brand-200'
+                              ? mode === 'move'
+                                ? 'bg-brand-600/20 border-brand-500 text-brand-800 dark:bg-brand-500/20 dark:text-brand-100 shadow-sm'
+                                : 'bg-amber-500/15 border-amber-500/60 text-amber-800 dark:text-amber-200'
                               : 'border-border hover:bg-surface-secondary text-foreground'
                           )}
                         >
-                          {mode === 'copy' ? (
+                          {mode === 'move' ? (
                             <>
-                              <Copy className="w-4 h-4" />
-                              Copiar
+                              <ArrowRightLeft className="w-4 h-4" />
+                              Mover
                             </>
                           ) : (
                             <>
-                              <FolderOpen className="w-4 h-4" />
-                              Mover
+                              <Copy className="w-4 h-4" />
+                              Copiar
                             </>
                           )}
                         </button>
                       )
                     })}
+                  </div>
+                  <div
+                    className={clsx(
+                      'mt-3 rounded-md border px-3 py-2 text-xs flex items-start gap-2',
+                      t.mode === 'move'
+                        ? 'bg-brand-500/10 border-brand-500/40 text-brand-800 dark:text-brand-200'
+                        : 'bg-amber-500/10 border-amber-500/40 text-amber-800 dark:text-amber-200'
+                    )}
+                  >
+                    <span className="mt-0.5">
+                      {t.mode === 'move' ? (
+                        <ArrowRightLeft className="w-4 h-4" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </span>
+                    <span className="leading-snug">
+                      <strong>
+                        {t.mode === 'move' ? 'MODO MOVER:' : 'MODO COPIAR:'}
+                      </strong>{' '}
+                      {t.mode === 'move'
+                        ? `el ${resourceKind} se ELIMINARÁ de su carpeta actual y solo quedará en el destino.`
+                        : `se CREARÁ una copia en el destino; el ${resourceKind} original permanece intacto.`}
+                    </span>
                   </div>
                 </div>
 
@@ -2763,7 +2860,10 @@ function ProjectDetailPage() {
                 </button>
                 <button
                   type="button"
-                  className="btn-primary text-sm"
+                  className={clsx(
+                    'text-sm font-semibold',
+                    t.mode === 'move' ? 'btn-primary' : 'btn-secondary'
+                  )}
                   disabled={!canSubmit}
                   onClick={() => handleTransferSubmit(close)}
                 >
@@ -2774,8 +2874,14 @@ function ProjectDetailPage() {
                     </>
                   ) : (
                     <>
-                      <Check className="w-4 h-4" />
-                      {t.mode === 'copy' ? 'Copiar' : 'Mover'}
+                      {t.mode === 'move' ? (
+                        <ArrowRightLeft className="w-4 h-4" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                      {t.mode === 'copy'
+                        ? 'Confirmar copia'
+                        : 'Confirmar movimiento'}
                     </>
                   )}
                 </button>
@@ -3124,10 +3230,12 @@ function ProjectDetailPage() {
             }}
           />
           <div
-            className="fixed z-50 w-52 card p-1 text-sm shadow-2xl"
+            ref={folderCtxRef}
+            className="fixed z-50 w-52 card p-1 text-sm shadow-2xl overflow-y-auto"
             style={{
-              left: folderContextMenu.x,
-              top: folderContextMenu.y,
+              left: ctxClamp.folder?.left ?? folderContextMenu.x,
+              top: ctxClamp.folder?.top ?? folderContextMenu.y,
+              maxHeight: ctxClamp.folder?.maxH ? `${ctxClamp.folder.maxH}px` : undefined,
             }}
           >
             <button
@@ -3161,15 +3269,15 @@ function ProjectDetailPage() {
                 setFolderContextMenu(null)
                 setTransferDialog({
                   resource: { type: 'folder', folder: f },
-                  mode: 'copy',
+                  mode: 'move',
                   targetFolderId: f.parentId ?? null,
                   error: '',
                 })
               }}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
             >
-              <Copy className="w-4 h-4" />
-              Copiar / Mover
+              <ArrowRightLeft className="w-4 h-4" />
+              Mover / Copiar
             </button>
             <button
               onClick={() => {
@@ -3267,10 +3375,12 @@ function ProjectDetailPage() {
             }}
           />
           <div
-            className="fixed z-50 w-52 card p-1 text-sm shadow-2xl"
+            ref={fileCtxRef}
+            className="fixed z-50 w-52 card p-1 text-sm shadow-2xl overflow-y-auto"
             style={{
-              left: fileContextMenu.x,
-              top: fileContextMenu.y,
+              left: ctxClamp.file?.left ?? fileContextMenu.x,
+              top: ctxClamp.file?.top ?? fileContextMenu.y,
+              maxHeight: ctxClamp.file?.maxH ? `${ctxClamp.file.maxH}px` : undefined,
             }}
           >
             <button
@@ -3308,15 +3418,15 @@ function ProjectDetailPage() {
                 setFileContextMenu(null)
                 setTransferDialog({
                   resource: { type: 'file', file: f },
-                  mode: 'copy',
+                  mode: 'move',
                   targetFolderId: f.folderId ?? null,
                   error: '',
                 })
               }}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
             >
-              <Copy className="w-4 h-4" />
-              Copiar / Mover
+              <ArrowRightLeft className="w-4 h-4" />
+              Mover / Copiar
             </button>
             <button
               onClick={() => {
