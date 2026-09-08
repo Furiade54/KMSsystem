@@ -292,6 +292,7 @@ export interface Project {
   ownerId?: string | null
   docMaestroCarpetaId?: string | null
   docMaestroArchivoId?: string | null
+  progressPercentage: number
   createdAt: string
   updatedAt?: string | null
 }
@@ -336,10 +337,51 @@ export interface ProjectTopic {
   id: string
   projectId: string
   title: string
+  description?: string | null
   createdBy?: string | null
   status: TopicStatus
+  order: number
+  percentage: number
   createdAt: string
   updatedAt?: string | null
+}
+
+export type TopicItemStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED'
+
+export const DB_TOPIC_ITEM_STATUS = {
+  PENDIENTE: 'PENDING' as TopicItemStatus,
+  EN_PROGRESO: 'IN_PROGRESS' as TopicItemStatus,
+  COMPLETADO: 'COMPLETED' as TopicItemStatus,
+  BLOQUEADO: 'BLOCKED' as TopicItemStatus,
+} as const
+
+export type DbTopicItemStatus = keyof typeof DB_TOPIC_ITEM_STATUS
+
+export interface ProjectTopicItem {
+  id: string
+  topicId: string
+  title: string
+  description?: string | null
+  status: TopicItemStatus
+  order: number
+  assignedMemberIds: string[]
+  assignedMembers?: Array<{
+    assignmentId: string
+    projectMemberId: string
+    userId: string
+    userName?: string | null
+    roleName?: string | null
+    assignedAt: string
+  }>
+  createdAt: string
+  updatedAt?: string | null
+}
+
+export interface ProjectTopicItemMember {
+  id: string
+  topicItemId: string
+  projectMemberId: string
+  assignedAt: string
 }
 
 export type MeetingStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'HELD'
@@ -365,6 +407,15 @@ export interface Meeting {
   status: MeetingStatus
   createdAt: string
   updatedAt?: string | null
+  linkedTopicsIds?: string[]
+}
+
+export interface MeetingLinkedTopic {
+  topicId: string
+  title: string
+  linkedAt: string
+  linkedByUserId?: string | null
+  linkedByUserName?: string | null
 }
 
 export interface MeetingParticipant {

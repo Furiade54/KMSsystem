@@ -192,7 +192,22 @@ export async function permanentlyDeleteProject(
          Archivos no tiene ON DELETE CASCADE hacia Proyectos; pero
          VersionesArchivo cuelga de Archivos con CASCADE y se borra
          sola al borrar Archivos.
+         ItemMiembros: ambas FK en NO ACTION (restricción multiple
+         cascade paths SQL Server 1785) → borrar MANUALMENTE antes
+         de TemasProyectoItems, MiembrosProyecto, TemasProyecto.
          ============================================================ */
+
+      -- 3a) TemasProyectoItemMiembros (junction FK NO_ACTION)
+      DELETE tim
+      FROM dbo.TemasProyectoItemMiembros tim
+        INNER JOIN dbo.TemasProyectoItems ti ON ti.Id = tim.IdTemaItem
+        INNER JOIN dbo.TemasProyecto t ON t.Id = ti.IdTema
+      WHERE t.IdProyecto = @projectId;
+      DELETE tim2
+      FROM dbo.TemasProyectoItemMiembros tim2
+        INNER JOIN dbo.MiembrosProyecto mp ON mp.Id = tim2.IdMiembroProyecto
+      WHERE mp.IdProyecto = @projectId;
+
       DELETE a
       FROM Archivos a
       WHERE a.Id IN (SELECT Id FROM @Archivos);
@@ -201,8 +216,8 @@ export async function permanentlyDeleteProject(
          PASO 4: BORRAR PROYECTO. ON DELETE CASCADE de la FK
          Proyectos.Id se encarga automaticamente de:
          Carpetas, MiembrosProyecto, RecursosExternos, Reuniones,
-         TemasProyecto. Reuniones a su vez cascada ActasReunion y
-         AsistentesReunion.
+         TemasProyecto → TemasProyectoItems.
+         Reuniones a su vez cascada ActasReunion y AsistentesReunion.
          ============================================================ */
       DELETE FROM Proyectos WHERE Id = @projectId AND IdOrganizacion = @orgId;
 

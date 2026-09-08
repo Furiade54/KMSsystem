@@ -19,12 +19,17 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
 
   if (err instanceof Error) {
+    const mssqlNumber = (err as any)?.number ?? (err as any)?.code
+    const mssqlMsg = (err as any)?.originalError?.message ?? (err as any)?.message
     console.error('💥 Error inesperado:', err)
     return res.status(500).json({
       success: false,
-      message: 'Error interno del servidor',
-      error: isDev ? err.message : undefined,
+      message: isDev
+        ? (mssqlMsg || err.message || 'Error interno del servidor')
+        : 'Error interno del servidor',
+      error: isDev ? (mssqlMsg || err.message) : undefined,
       stack: isDev ? err.stack : undefined,
+      code: isDev ? (mssqlNumber ?? undefined) : undefined,
     })
   }
 

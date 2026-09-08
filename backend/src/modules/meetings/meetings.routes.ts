@@ -5,8 +5,11 @@ import {
   createMeeting,
   deleteMeeting,
   getMeeting,
+  linkTopicToMeeting,
+  listMeetingLinkedTopics,
   listMeetings,
   setMeetingMinutesFile,
+  unlinkTopicFromMeeting,
   updateMeeting,
 } from './meetings.controller'
 import {
@@ -53,6 +56,23 @@ meetingsRouter.delete(
   '/:meetingId/asistentes/:userId',
   requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
   removeMeetingParticipant
+)
+
+// --- Vinculación Reunión <-> Temas ---
+meetingsRouter.get(
+  '/:meetingId/temas',
+  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
+  listMeetingLinkedTopics
+)
+meetingsRouter.post(
+  '/:meetingId/temas/:topicId',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  linkTopicToMeeting
+)
+meetingsRouter.delete(
+  '/:meetingId/temas/:topicId',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  unlinkTopicFromMeeting
 )
 
 export default meetingsRouter

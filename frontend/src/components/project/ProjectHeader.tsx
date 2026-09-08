@@ -30,6 +30,7 @@ export type ProjectHeaderProps = {
     status?: string
     updatedAt?: string | null
     createdAt?: string | null
+    progressPercentage?: number | null
   } | null | undefined
   projectGradientClass: (color?: string | null) => string
   headerBadge: { bgClass: string; textClass: string; label: string } | null
@@ -140,6 +141,26 @@ export default function ProjectHeader(props: ProjectHeaderProps) {
                     )}
                   >
                     {headerBadge.label}
+                  </span>
+                )}
+                {typeof project.progressPercentage === 'number' && (
+                  <span className="inline-flex items-center gap-1.5 shrink-0 ml-1.5 pl-2 border-l border-border/70">
+                    <span className="relative w-24 h-2 rounded-full bg-surface-secondary overflow-hidden shrink-0">
+                      <span
+                        className={clsx(
+                          'absolute inset-y-0 left-0 rounded-full transition-all',
+                          project.progressPercentage >= 95
+                            ? 'bg-emerald-500'
+                            : project.progressPercentage >= 30
+                              ? 'bg-amber-500'
+                              : 'bg-slate-400'
+                        )}
+                        style={{ width: `${Math.max(0, Math.min(100, project.progressPercentage))}%` }}
+                      />
+                    </span>
+                    <span className="text-[10.5px] font-semibold text-muted-foreground tabular-nums shrink-0">
+                      {project.progressPercentage}%
+                    </span>
                   </span>
                 )}
               </div>

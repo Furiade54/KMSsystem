@@ -77,6 +77,7 @@ function mapProject(row: ProjectRow): Project & {
     docMaestroArchivoId: row.IdDocMaestroArchivo ? String(row.IdDocMaestroArchivo) : null,
     createdAt: sqlLocalToIso(row.FechaCreacion as any),
     updatedAt: sqlLocalToIsoOrNull(row.FechaActualizacion as any),
+    progressPercentage: resolveProgress(row),
     color: resolveColor(row),
     progress: resolveProgress(row),
     membersCount: Number(row.miembrosCount ?? 0),
@@ -158,6 +159,7 @@ export async function listProjects(
     const dataSql = `
       SELECT
         p.Id, p.IdOrganizacion, p.Nombre, p.Descripcion, p.Estado, p.IdPropietario,
+        p.IdDocMaestroCarpeta, p.IdDocMaestroArchivo, p.Color, p.ProgresoPorcentaje,
         p.FechaCreacion, p.FechaActualizacion,
         (SELECT COUNT(*) FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id) miembrosCount,
         (SELECT COUNT(*) FROM Archivos a WHERE a.IdProyecto=p.Id) archivosCount
@@ -195,7 +197,7 @@ export async function getProject(
     const r = await qry.query<ProjectRow>(`
       SELECT
         p.Id, p.IdOrganizacion, p.Nombre, p.Descripcion, p.Estado, p.IdPropietario,
-        p.IdDocMaestroCarpeta, p.IdDocMaestroArchivo,
+        p.IdDocMaestroCarpeta, p.IdDocMaestroArchivo, p.Color, p.ProgresoPorcentaje,
         p.FechaCreacion, p.FechaActualizacion,
         (SELECT COUNT(*) FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id) miembrosCount,
         (SELECT COUNT(*) FROM Archivos a WHERE a.IdProyecto=p.Id) archivosCount
@@ -425,6 +427,7 @@ export async function createProject(
     const detail = await qry.query<ProjectRow>(`
       SELECT
         p.Id, p.IdOrganizacion, p.Nombre, p.Descripcion, p.Estado, p.IdPropietario,
+        p.IdDocMaestroCarpeta, p.IdDocMaestroArchivo, p.Color, p.ProgresoPorcentaje,
         p.FechaCreacion, p.FechaActualizacion,
         (SELECT COUNT(*) FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id) miembrosCount,
         (SELECT COUNT(*) FROM Archivos a WHERE a.IdProyecto=p.Id) archivosCount
@@ -502,6 +505,7 @@ export async function updateProject(
     const detail = await qry.query<ProjectRow>(`
       SELECT
         p.Id, p.IdOrganizacion, p.Nombre, p.Descripcion, p.Estado, p.IdPropietario,
+        p.IdDocMaestroCarpeta, p.IdDocMaestroArchivo, p.Color, p.ProgresoPorcentaje,
         p.FechaCreacion, p.FechaActualizacion,
         (SELECT COUNT(*) FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id) miembrosCount,
         (SELECT COUNT(*) FROM Archivos a WHERE a.IdProyecto=p.Id) archivosCount
@@ -689,6 +693,9 @@ export async function removeProjectMemberEndpoint(
       const delMember = tx.request()
       delMember.input('mid', sql.UniqueIdentifier, memberId)
       delMember.input('pid', sql.UniqueIdentifier, projectId)
+      await delMember.query(`
+        DELETE FROM dbo.TemasProyectoItemMiembros WHERE IdMiembroProyecto = @mid;
+      `);
       const delMembers = await delMember.query(`DELETE FROM MiembrosProyecto WHERE Id=@mid AND IdProyecto=@pid;`)
       if (Number(delMembers.rowsAffected?.[0] ?? 0) === 0) {
         throw new NotFoundError('Miembro no encontrado en el proyecto')

@@ -1,4 +1,5 @@
 import type { ChangeEvent, MutableRefObject } from 'react'
+import { useState } from 'react'
 import clsx from 'clsx'
 import {
   Search,
@@ -15,8 +16,13 @@ import {
   Link2,
   Unlink,
   Download,
+  Link as LinkIcon,
+  CheckSquare,
+  Square,
+  X as XIcon,
 } from 'lucide-react'
-import type { ApiMeeting, ApiMeetingStatus } from '@/services/meetings.service'
+import type { ApiMeeting, ApiMeetingLinkedTopic, ApiMeetingStatus } from '@/services/meetings.service'
+import type { ApiTopic } from '@/services/project-topics.service'
 import type { ProjectMember } from '@/services/projects.service'
 import type { ApiFile } from '@/services/files.service'
 import { formatBytes } from '@/services/files.service'
@@ -97,6 +103,16 @@ export type ProjectMeetingsTabProps = {
   onRemoveParticipant: (meetingId: string, userId: string) => void
   onUploadActa: (ev: ChangeEvent<HTMLInputElement>, meetingId: string) => void
   onConfirmUnlinkActa: (meetingId: string) => void
+
+  projectTopicsItems: ApiTopic[] | undefined
+  linkingTopicsForMeetingId: string | null
+  setLinkingTopicsForMeetingId: (v: string | null) => void
+  meetingLinkedTopicsLoading: boolean
+  meetingLinkedTopicsItems: ApiMeetingLinkedTopic[]
+  linkTopicPending: boolean
+  unlinkTopicPending: boolean
+  onLinkTopic: (meetingId: string, topicId: string) => void
+  onUnlinkTopic: (meetingId: string, topicId: string) => void
 }
 
 export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
@@ -153,7 +169,18 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
     onRemoveParticipant,
     onUploadActa,
     onConfirmUnlinkActa,
+    projectTopicsItems,
+    linkingTopicsForMeetingId,
+    setLinkingTopicsForMeetingId,
+    meetingLinkedTopicsLoading,
+    meetingLinkedTopicsItems,
+    linkTopicPending,
+    unlinkTopicPending,
+    onLinkTopic,
+    onUnlinkTopic,
   } = props
+
+  const [selectedTopicsToLink, setSelectedTopicsToLink] = useState<string[]>([])
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin p-4 md:p-6">
@@ -201,7 +228,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
           </div>
         </div>
 
-        <div className="card divide-y divide-border overflow-hidden">
+        <div className="card divide-y divide-border overflow-visible">
           {meetingsLoading && meetingsFetchStatus !== 'idle' ? (
             Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="p-4 flex items-start gap-4 animate-pulse">
@@ -343,6 +370,237 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                         <FileCheck2 className="w-3.5 h-3.5 inline mr-1.5" />
                         Acta archivo
                       </button>
+
+                      <div className="ml-1 relative">
+                        <button
+                          type="button"
+                          className={clsx(
+                            'h-7 px-3 text-[11.5px] rounded-md transition-colors ring-1 ring-black/5',
+                            linkingTopicsForMeetingId === meeting.id
+                              ? 'bg-violet-500/15 text-violet-700 dark:text-violet-300 ring-violet-500/40'
+                              : 'text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
+                          )}
+                          onClick={() => {
+                            const next = linkingTopicsForMeetingId === meeting.id ? null : meeting.id
+                            setLinkingTopicsForMeetingId(next)
+                            if (next) {
+                              setSelectedTopicsToLink([])
+                            }
+                          }}
+                        >
+                          <LinkIcon className="w-3.5 h-3.5 inline mr-1.5" />
+                          Temas ({meeting.linkedTopicsIds?.length ?? 0})
+                          <ChevronDown className="w-3 h-3 inline ml-1.5 opacity-70" />
+                        </button>
+
+                        {linkingTopicsForMeetingId === meeting.id ? (
+                          <div className="absolute left-0 top-full mt-1.5 z-20 w-80 card overflow-hidden shadow-lg ring-1 ring-black/5 flex flex-col">
+                            <div className="px-3 py-2 border-b border-border bg-surface-secondary/40 flex items-center justify-between shrink-0">
+                              <div className="min-w-0">
+                                <p className="text-[11.5px] font-medium text-foreground flex items-center gap-1.5">
+                                  <LinkIcon className="w-3.5 h-3.5 text-violet-600" />
+                                  Temas vinculados
+                                </p>
+                                <p className="text-[10.5px] text-muted-foreground">
+                                  Temas del proyecto tratados en esta reunión
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn-ghost h-7 w-7 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-secondary"
+                                onClick={() => {
+                                  setLinkingTopicsForMeetingId(null)
+                                  setSelectedTopicsToLink([])
+                                }}
+                              >
+                                <XIcon className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {(() => {
+                              const linkedIds = new Set(meeting.linkedTopicsIds ?? [])
+                              const availableCount = (projectTopicsItems ?? []).filter(
+                                (t) => !linkedIds.has(t.id)
+                              ).length
+                              const totalProjectTopics = projectTopicsItems?.length ?? 0
+                              const showFooter =
+                                canEditMeetings && totalProjectTopics > 0 && availableCount > 0
+                              return (
+                                <>
+                                  <div className="max-h-60 overflow-y-auto">
+                                    {(() => {
+                                      type LinkedRow = { id: string; title: string; status?: string; percentage?: number }
+                                      const fromProject: LinkedRow[] = (projectTopicsItems ?? []).filter((t) =>
+                                        linkedIds.has(t.id)
+                                      )
+                                      const fromLinkedDetails: LinkedRow[] = (meetingLinkedTopicsItems ?? [])
+                                        .filter((l) => !linkedIds.has(l.topicId))
+                                        .map((l) => ({ id: l.topicId, title: l.title }))
+                                      const linkedRows: LinkedRow[] = [...fromProject, ...fromLinkedDetails].filter(
+                                        (t, i, arr) => arr.findIndex((x) => x.id === t.id) === i
+                                      )
+                                      const availableTopics = (projectTopicsItems ?? []).filter(
+                                        (t) => !linkedIds.has(t.id)
+                                      )
+                                      const hasLinkable = canEditMeetings && availableTopics.length > 0
+                                      const hasEmptyAllLinked =
+                                        canEditMeetings &&
+                                        availableTopics.length === 0 &&
+                                        totalProjectTopics > 0
+                                      const hasNoTopics = canEditMeetings && totalProjectTopics === 0
+
+                                return (
+                                  <div className="p-2 space-y-2">
+                                    {meetingLinkedTopicsLoading && meeting.linkedTopicsIds && meeting.linkedTopicsIds.length > 0 ? (
+                                      <div className="px-2 py-3 text-center">
+                                        <Loader2 className="w-4 h-4 animate-spin text-brand-600 mx-auto" />
+                                      </div>
+                                    ) : null}
+
+                                    {linkedRows.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {linkedRows.map((t) => {
+                                          const detail = meetingLinkedTopicsItems.find(
+                                            (l) => l.topicId === t.id
+                                          )
+                                          return (
+                                            <div
+                                              key={t.id}
+                                              className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-violet-500/10 ring-1 ring-violet-500/20"
+                                            >
+                                              <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+                                              <div className="min-w-0 flex-1">
+                                                <p className="text-[11.5px] font-medium text-foreground truncate">
+                                                  {t.title}
+                                                </p>
+                                                {detail ? (
+                                                  <p className="text-[10px] text-muted-foreground truncate">
+                                                    Vinculado {formatRelativeTime(detail.linkedAt)}
+                                                    {detail.linkedByUserName
+                                                      ? ` · ${detail.linkedByUserName}`
+                                                      : ''}
+                                                  </p>
+                                                ) : null}
+                                              </div>
+                                              {canEditMeetings ? (
+                                                <button
+                                                  type="button"
+                                                  className="btn-ghost h-6 w-6 p-0.5 rounded text-muted-foreground hover:text-status-blocked hover:bg-status-blocked/10 shrink-0"
+                                                  title="Desvincular tema"
+                                                  onClick={() =>
+                                                    onUnlinkTopic(meeting.id, t.id)
+                                                  }
+                                                  disabled={unlinkTopicPending}
+                                                >
+                                                  {unlinkTopicPending ? (
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                  ) : (
+                                                    <Unlink className="w-3.5 h-3.5" />
+                                                  )}
+                                                </button>
+                                              ) : null}
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <div className="px-2 py-2 text-[11px] text-muted-foreground text-center">
+                                        No hay temas vinculados a esta reunión.
+                                      </div>
+                                    )}
+
+                                    {hasLinkable && (
+                                      <div className="border-t border-border/70 pt-2 space-y-1">
+                                        <p className="px-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                                          Vincular temas del proyecto
+                                        </p>
+                                        {availableTopics.map((t) => {
+                                          const checked = selectedTopicsToLink.includes(t.id)
+                                          return (
+                                            <label
+                                              key={t.id}
+                                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-secondary cursor-pointer"
+                                            >
+                                              <button
+                                                type="button"
+                                                className="shrink-0 text-brand-600"
+                                                onClick={(e) => {
+                                                  e.preventDefault()
+                                                  setSelectedTopicsToLink((prev) =>
+                                                    prev.includes(t.id)
+                                                      ? prev.filter((x) => x !== t.id)
+                                                      : [...prev, t.id]
+                                                  )
+                                                }}
+                                              >
+                                                {checked ? (
+                                                  <CheckSquare className="w-3.5 h-3.5" />
+                                                ) : (
+                                                  <Square className="w-3.5 h-3.5 opacity-70" />
+                                                )}
+                                              </button>
+                                              <div className="min-w-0 flex-1">
+                                                <p className="text-[11.5px] text-foreground truncate">
+                                                  {t.title}
+                                                </p>
+                                                {typeof t.percentage === 'number' ? (
+                                                  <p className="text-[10px] text-muted-foreground">
+                                                    Progreso {t.percentage}%
+                                                  </p>
+                                                ) : null}
+                                              </div>
+                                            </label>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+
+                                    {hasEmptyAllLinked && (
+                                      <div className="px-2 py-2 text-[11px] text-muted-foreground text-center border-t border-border/70 pt-2">
+                                        Todos los temas del proyecto ya están vinculados.
+                                      </div>
+                                    )}
+
+                                    {hasNoTopics && (
+                                      <div className="px-2 py-2 text-[11px] text-muted-foreground text-center border-t border-border/70 pt-2">
+                                        El proyecto aún no tiene temas creados.
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                            </div>
+
+                            {showFooter && (
+                              <div className="border-t border-border bg-surface-secondary/50 px-3 py-2 flex items-center justify-end shrink-0">
+                                <button
+                                  type="button"
+                                  className="btn-secondary text-[11px] h-7 px-2"
+                                  disabled={!selectedTopicsToLink.length || linkTopicPending}
+                                  onClick={() => {
+                                    selectedTopicsToLink.forEach((tid) =>
+                                      onLinkTopic(meeting.id, tid)
+                                    )
+                                    setSelectedTopicsToLink([])
+                                  }}
+                                >
+                                  {linkTopicPending ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Plus className="w-3 h-3" />
+                                  )}
+                                  <span className="ml-1">
+                                    Vincular seleccionados ({selectedTopicsToLink.length})
+                                  </span>
+                                </button>
+                              </div>
+                            )}
+                                </>
+                              )
+                            })()}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
 
                     {meetingPanelTab === 'participants' && (

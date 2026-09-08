@@ -14,6 +14,15 @@ export interface ApiMeeting {
   status: ApiMeetingStatus
   createdAt: string
   updatedAt?: string | null
+  linkedTopicsIds?: string[]
+}
+
+export interface ApiMeetingLinkedTopic {
+  topicId: string
+  title: string
+  linkedAt: string
+  linkedByUserId?: string | null
+  linkedByUserName?: string | null
 }
 
 export interface CreateMeetingPayload {
@@ -81,4 +90,36 @@ export async function deleteMeeting(projectId: string, meetingId: string) {
   if (res.status !== 204) {
     throw new Error('No se pudo eliminar la reunión')
   }
+}
+
+// --- Vinculación Reunión <-> Temas ---
+
+export async function fetchMeetingLinkedTopics(projectId: string, meetingId: string): Promise<ApiMeetingLinkedTopic[]> {
+  const res = await api.get<ApiResponse<ApiMeetingLinkedTopic[]>>(
+    `/projects/${projectId}/reuniones/${meetingId}/temas`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudieron cargar los temas vinculados')
+  }
+  return res.data.data
+}
+
+export async function linkTopicToMeeting(projectId: string, meetingId: string, topicId: string): Promise<ApiMeeting> {
+  const res = await api.post<ApiResponse<ApiMeeting>>(
+    `/projects/${projectId}/reuniones/${meetingId}/temas/${topicId}`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo vincular el tema a la reunión')
+  }
+  return res.data.data
+}
+
+export async function unlinkTopicFromMeeting(projectId: string, meetingId: string, topicId: string): Promise<ApiMeeting> {
+  const res = await api.delete<ApiResponse<ApiMeeting>>(
+    `/projects/${projectId}/reuniones/${meetingId}/temas/${topicId}`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo desvincular el tema de la reunión')
+  }
+  return res.data.data
 }

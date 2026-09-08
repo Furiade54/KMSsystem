@@ -1,5 +1,5 @@
 import type { ApiMeetingStatus } from '@/services/meetings.service'
-import type { ApiTopicStatus } from '@/services/project-topics.service'
+import type { ApiTopicItemStatus, ApiTopicStatus } from '@/services/project-topics.service'
 
 export function topicStatusLabel(status: ApiTopicStatus): string {
   switch (status) {
@@ -30,6 +30,36 @@ export function topicStatusBadgeClass(status: ApiTopicStatus): string {
       return 'bg-gray-500/25 text-emerald-800 dark:text-emerald-200'
     case 'IN_PROGRESS':
       return 'bg-status-review/20 text-amber-700 dark:text-amber-300'
+    default:
+      return 'bg-surface-secondary text-muted-foreground'
+  }
+}
+
+export function topicItemStatusLabel(status: ApiTopicItemStatus): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Pendiente'
+    case 'IN_PROGRESS':
+      return 'En progreso'
+    case 'COMPLETED':
+      return 'Completado'
+    case 'BLOCKED':
+      return 'Bloqueado'
+    default:
+      return status
+  }
+}
+
+export function topicItemStatusBadgeClass(status: ApiTopicItemStatus): string {
+  switch (status) {
+    case 'PENDING':
+      return 'bg-slate-500/20 text-slate-700 dark:text-slate-300'
+    case 'IN_PROGRESS':
+      return 'bg-status-review/20 text-amber-700 dark:text-amber-300'
+    case 'COMPLETED':
+      return 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+    case 'BLOCKED':
+      return 'bg-status-blocked/20 text-rose-700 dark:text-rose-300'
     default:
       return 'bg-surface-secondary text-muted-foreground'
   }

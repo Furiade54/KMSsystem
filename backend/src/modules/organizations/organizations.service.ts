@@ -361,6 +361,15 @@ export async function permanentlyDeleteOrganization(
         OR (IdRecurso IN (SELECT Id FROM dbo.Carpetas WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)) AND TipoRecurso = 'FOLDER')
         OR (IdRecurso IN (SELECT Id FROM dbo.Archivos WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)) AND TipoRecurso = 'FILE');
 
+      -- TemasProyectoItemMiembros (ambas FK NO_ACTION por multiple-cascade-path SQL Server)
+      DELETE tim FROM dbo.TemasProyectoItemMiembros tim
+        INNER JOIN dbo.TemasProyectoItems ti ON ti.Id = tim.IdTemaItem
+        INNER JOIN dbo.TemasProyecto t ON t.Id = ti.IdTema
+      WHERE t.IdProyecto IN (SELECT Id FROM @ProjectIds);
+      DELETE tim2 FROM dbo.TemasProyectoItemMiembros tim2
+        INNER JOIN dbo.MiembrosProyecto mp ON mp.Id = tim2.IdMiembroProyecto
+      WHERE mp.IdProyecto IN (SELECT Id FROM @ProjectIds);
+
       DELETE FROM dbo.MiembrosProyecto WHERE IdProyecto IN (SELECT Id FROM @ProjectIds);
       DELETE FROM dbo.AsistentesReunion WHERE IdReunion IN (SELECT Id FROM dbo.Reuniones WHERE IdProyecto IN (SELECT Id FROM @ProjectIds));
       DELETE FROM dbo.ActasReunion WHERE IdReunion IN (SELECT Id FROM dbo.Reuniones WHERE IdProyecto IN (SELECT Id FROM @ProjectIds));

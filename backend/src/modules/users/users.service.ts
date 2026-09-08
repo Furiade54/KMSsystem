@@ -593,6 +593,11 @@ export async function permanentlyDeleteUser(
       UPDATE Compartidos SET IdUsuarioDestino = NULL WHERE IdUsuarioDestino = @userId;
 
       DELETE FROM RolesUsuario WHERE IdUsuario = @userId AND IdOrganizacion = @orgId;
+      -- TemasProyectoItemMiembros FK NO_ACTION por multiple-cascade-path → limpieza manual
+      DELETE tim FROM dbo.TemasProyectoItemMiembros tim
+        INNER JOIN dbo.MiembrosProyecto mp ON mp.Id = tim.IdMiembroProyecto
+        INNER JOIN Proyectos p ON p.Id = mp.IdProyecto
+      WHERE mp.IdUsuario = @userId AND p.IdOrganizacion = @orgId;
       DELETE FROM MiembrosProyecto WHERE IdUsuario = @userId AND EXISTS (
         SELECT 1 FROM Proyectos p WHERE p.Id = MiembrosProyecto.IdProyecto AND p.IdOrganizacion = @orgId
       );

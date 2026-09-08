@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express'
-import type { ApiResponse, Meeting, MeetingStatus, PaginatedResult } from '../../../../packages/shared-types/src'
+import type { ApiResponse, Meeting, MeetingLinkedTopic, MeetingStatus, PaginatedResult } from '../../../../packages/shared-types/src'
 import { DB_MEETING_STATUS } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { logAuditRecord } from '../../shared/db/audit'
@@ -19,6 +19,14 @@ type MeetingRow = {
   FechaActualizacion: Date | null
 }
 
+type LinkedTopicRow = {
+  topicId: string
+  title: string
+  linkedAt: Date
+  linkedByUserId: string | null
+  linkedByUserName: string | null
+}
+
 const DB_TO_API_STATUS: Record<string, MeetingStatus> = DB_MEETING_STATUS
 
 const API_TO_DB_STATUS: Record<MeetingStatus, keyof typeof DB_MEETING_STATUS> = {
@@ -29,7 +37,7 @@ const API_TO_DB_STATUS: Record<MeetingStatus, keyof typeof DB_MEETING_STATUS> = 
   CANCELLED: 'CANCELADA',
 }
 
-function mapMeeting(row: MeetingRow): Meeting {
+function mapMeeting(row: MeetingRow, linkedTopicsIds?: string[]): Meeting {
   const rawStatus = String(row.Estado || '').toUpperCase()
   return {
     id: String(row.Id),
@@ -42,7 +50,41 @@ function mapMeeting(row: MeetingRow): Meeting {
     status: DB_TO_API_STATUS[rawStatus] ?? 'SCHEDULED',
     createdAt: sqlLocalToIso(row.FechaCreacion as any),
     updatedAt: sqlLocalToIsoOrNull(row.FechaActualizacion as any),
+    ...(linkedTopicsIds ? { linkedTopicsIds } : undefined),
   }
+}
+
+function mapLinkedTopic(row: LinkedTopicRow): MeetingLinkedTopic {
+  return {
+    topicId: String(row.topicId),
+    title: String(row.title),
+    linkedAt: sqlLocalToIso(row.linkedAt as any),
+    linkedByUserId: row.linkedByUserId ? String(row.linkedByUserId) : null,
+    linkedByUserName: row.linkedByUserName ?? null,
+  }
+}
+
+async function fetchLinkedTopicsIds(meetingIds: string[]): Promise<Record<string, string[]>> {
+  const result: Record<string, string[]> = {}
+  if (meetingIds.length === 0) return result
+  const pool = await getDbPool()
+  const guidsLiteral = meetingIds
+    .map((id) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id) ? `CAST('${id}' AS UNIQUEIDENTIFIER)` : null)
+    .filter((g): g is string => g != null)
+    .join(', ')
+  if (!guidsLiteral) return result
+  const rows = await pool.request().query<{ IdReunion: string; IdTema: string }>(`
+    SELECT rtv.IdReunion, rtv.IdTema
+      FROM dbo.ReunionesTemasVinculados rtv
+     WHERE rtv.IdReunion IN (${guidsLiteral})
+     ORDER BY rtv.FechaVinculacion ASC
+  `)
+  for (const r of rows.recordset) {
+    const mid = String(r.IdReunion)
+    if (!result[mid]) result[mid] = []
+    result[mid].push(String(r.IdTema))
+  }
+  return result
 }
 
 function parseOptionalMeetingDate(value: unknown, fieldName: string): Date | null | undefined {
@@ -136,6 +178,7 @@ export async function setMeetingMinutesFile(
     }
 
     const updated = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    const linked = await fetchLinkedTopicsIds([meetingId])
     await logAuditRecord({
       organizationId: auth.organizationId,
       userId: auth.userId,
@@ -146,7 +189,7 @@ export async function setMeetingMinutesFile(
       extra: { projectId, previousMinutesFileId: current.IdActaArchivo, minutesFileId: updated.IdActaArchivo },
       req,
     })
-    res.status(200).json({ success: true, data: mapMeeting(updated) })
+    res.status(200).json({ success: true, data: mapMeeting(updated, linked[meetingId]) })
   } catch (err) {
     next(err)
   }
@@ -215,11 +258,13 @@ export async function listMeetings(
         r.FechaCreacion DESC
       OFFSET ${(page - 1) * pageSize} ROWS FETCH NEXT ${pageSize} ROWS ONLY;
     `)
+    const ids = dataResult.recordset.map((r) => String(r.Id))
+    const linkedMap = await fetchLinkedTopicsIds(ids)
 
     res.status(200).json({
       success: true,
       data: {
-        items: dataResult.recordset.map(mapMeeting),
+        items: dataResult.recordset.map((r) => mapMeeting(r, linkedMap[String(r.Id)])),
         total,
         page,
         pageSize,
@@ -238,8 +283,11 @@ export async function getMeeting(
 ) {
   try {
     const auth = (req as unknown as { auth: { organizationId: string } }).auth
-    const row = await getMeetingRowOrThrow(String(req.params.projectId || ''), String(req.params.meetingId || ''), auth.organizationId)
-    res.status(200).json({ success: true, data: mapMeeting(row) })
+    const projectId = String(req.params.projectId || '')
+    const meetingId = String(req.params.meetingId || '')
+    const row = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    const linkedMap = await fetchLinkedTopicsIds([meetingId])
+    res.status(200).json({ success: true, data: mapMeeting(row, linkedMap[meetingId]) })
   } catch (err) {
     next(err)
   }
@@ -285,6 +333,7 @@ export async function createMeeting(
     if (!meetingId) throw new AppError('No se pudo crear la reunión', 500)
 
     const row = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    const linkedMap = await fetchLinkedTopicsIds([meetingId])
     await logAuditRecord({
       organizationId: auth.organizationId,
       userId: auth.userId,
@@ -295,7 +344,7 @@ export async function createMeeting(
       extra: { projectId },
       req,
     })
-    res.status(201).json({ success: true, data: mapMeeting(row) })
+    res.status(201).json({ success: true, data: mapMeeting(row, linkedMap[meetingId]) })
   } catch (err) {
     next(err)
   }
@@ -356,6 +405,7 @@ export async function updateMeeting(
     `)
 
     const updated = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    const linkedMap = await fetchLinkedTopicsIds([meetingId])
     await logAuditRecord({
       organizationId: auth.organizationId,
       userId: auth.userId,
@@ -366,7 +416,7 @@ export async function updateMeeting(
       extra: { previousTitle: current.Titulo, projectId },
       req,
     })
-    res.status(200).json({ success: true, data: mapMeeting(updated) })
+    res.status(200).json({ success: true, data: mapMeeting(updated, linkedMap[meetingId]) })
   } catch (err) {
     next(err)
   }
@@ -398,6 +448,178 @@ export async function deleteMeeting(
       req,
     })
     res.status(204).send()
+  } catch (err) {
+    next(err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  VINCULACIÓN REUNIÓN <-> TEMAS (ReunionesTemasVinculados)
+// ---------------------------------------------------------------------------
+
+async function getTopicRowOrThrowSameProject(
+  projectId: string,
+  topicId: string,
+  organizationId: string
+): Promise<{ Id: string; Titulo: string }> {
+  const pool = await getDbPool()
+  const r = await pool
+    .request()
+    .input('projectId', sql.UniqueIdentifier, projectId)
+    .input('topicId', sql.UniqueIdentifier, topicId)
+    .input('orgId', sql.UniqueIdentifier, organizationId)
+    .query<{ Id: string; Titulo: string }>(`
+      SELECT t.Id, t.Titulo
+        FROM dbo.TemasProyecto t
+        INNER JOIN dbo.Proyectos p ON p.Id = t.IdProyecto
+       WHERE t.Id = @topicId
+         AND t.IdProyecto = @projectId
+         AND p.IdOrganizacion = @orgId
+         AND ISNULL(p.Estado, 'ACTIVO') <> 'ELIMINADO'
+    `)
+  const row = r.recordset[0]
+  if (!row) throw new NotFoundError('Tema no encontrado en el proyecto')
+  return row
+}
+
+export async function listMeetingLinkedTopics(
+  req: Request,
+  res: Response<ApiResponse<MeetingLinkedTopic[]>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string } }).auth
+    const projectId = String(req.params.projectId || '')
+    const meetingId = String(req.params.meetingId || '')
+    await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+
+    const pool = await getDbPool()
+    const r = await pool
+      .request()
+      .input('meetingId', sql.UniqueIdentifier, meetingId)
+      .input('projectId', sql.UniqueIdentifier, projectId)
+      .input('orgId', sql.UniqueIdentifier, auth.organizationId)
+      .query<LinkedTopicRow>(`
+        SELECT
+          t.Id           AS topicId,
+          t.Titulo       AS title,
+          rtv.FechaVinculacion   AS linkedAt,
+          rtv.IdUsuarioVinculante AS linkedByUserId,
+          u.Correo + ' (' + u.Nombre + ')' AS linkedByUserName
+        FROM dbo.ReunionesTemasVinculados rtv
+        INNER JOIN dbo.TemasProyecto t
+           ON t.Id = rtv.IdTema
+          AND t.IdProyecto = @projectId
+        LEFT JOIN dbo.Usuarios u
+           ON u.Id = rtv.IdUsuarioVinculante
+        WHERE rtv.IdReunion = @meetingId
+          AND EXISTS (
+            SELECT 1 FROM dbo.Proyectos p
+             WHERE p.Id = @projectId AND p.IdOrganizacion = @orgId
+          )
+        ORDER BY rtv.FechaVinculacion ASC
+      `)
+    res.status(200).json({ success: true, data: r.recordset.map(mapLinkedTopic) })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function linkTopicToMeeting(
+  req: Request,
+  res: Response<ApiResponse<Meeting>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.projectId || '')
+    const meetingId = String(req.params.meetingId || '')
+    const topicId = String(req.params.topicId || '')
+
+    // Validar reunión pertenece al proyecto + tenant
+    const meeting = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    // Validar tema pertenece al MISMO proyecto + tenant (evita cruce entre proyectos)
+    const tema = await getTopicRowOrThrowSameProject(projectId, topicId, auth.organizationId)
+
+    const pool = await getDbPool()
+    // Insert idempotente (PK compuesta): si ya existe, sin error
+    const ins = pool.request()
+    ins.input('meetingId', sql.UniqueIdentifier, meetingId)
+    ins.input('topicId', sql.UniqueIdentifier, topicId)
+    ins.input('userId', sql.UniqueIdentifier, auth.userId)
+    await ins.query(`
+      IF NOT EXISTS (
+        SELECT 1 FROM dbo.ReunionesTemasVinculados
+         WHERE IdReunion = @meetingId AND IdTema = @topicId
+      )
+      INSERT INTO dbo.ReunionesTemasVinculados
+        (IdReunion, IdTema, IdUsuarioVinculante, FechaVinculacion)
+      VALUES
+        (@meetingId, @topicId, @userId, GETDATE());
+    `)
+
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'meeting.tema.vinculado',
+      resourceType: 'meeting',
+      resourceId: meetingId,
+      resourceName: meeting.Titulo,
+      extra: { projectId, topicId, topicTitle: tema.Titulo },
+      req,
+    })
+
+    // Refetch completo con linkedTopicsIds
+    const updatedRow = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    const linkedMap = await fetchLinkedTopicsIds([meetingId])
+    res.status(200).json({ success: true, data: mapMeeting(updatedRow, linkedMap[meetingId]) })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function unlinkTopicFromMeeting(
+  req: Request,
+  res: Response<ApiResponse<Meeting>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.projectId || '')
+    const meetingId = String(req.params.meetingId || '')
+    const topicId = String(req.params.topicId || '')
+
+    const meeting = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    // Validación tema pertenece al mismo proyecto (si no existe lo tratamos como no-existe 200/Meeting actual)
+    let temaTitulo: string | null = null
+    try {
+      const t = await getTopicRowOrThrowSameProject(projectId, topicId, auth.organizationId)
+      temaTitulo = t.Titulo
+    } catch (_e) { /* no-op */ }
+
+    const pool = await getDbPool()
+    const del = pool.request()
+    del.input('meetingId', sql.UniqueIdentifier, meetingId)
+    del.input('topicId', sql.UniqueIdentifier, topicId)
+    await del.query(`
+      DELETE FROM dbo.ReunionesTemasVinculados
+       WHERE IdReunion = @meetingId AND IdTema = @topicId
+    `)
+
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'meeting.tema.desvinculado',
+      resourceType: 'meeting',
+      resourceId: meetingId,
+      resourceName: meeting.Titulo,
+      extra: { projectId, topicId, topicTitle: temaTitulo },
+      req,
+    })
+
+    const updatedRow = await getMeetingRowOrThrow(projectId, meetingId, auth.organizationId)
+    const linkedMap = await fetchLinkedTopicsIds([meetingId])
+    res.status(200).json({ success: true, data: mapMeeting(updatedRow, linkedMap[meetingId]) })
   } catch (err) {
     next(err)
   }

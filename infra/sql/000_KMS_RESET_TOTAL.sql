@@ -325,10 +325,17 @@ CREATE TABLE dbo.TemasProyecto (
     Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TemasProyecto PRIMARY KEY DEFAULT NEWID(),
     IdProyecto UNIQUEIDENTIFIER NOT NULL,
     Titulo NVARCHAR(255) NOT NULL,
+    Descripcion NVARCHAR(MAX) NULL,
     IdCreador UNIQUEIDENTIFIER NULL,
     Estado VARCHAR(30) NOT NULL CONSTRAINT DF_TemasProyecto_Estado DEFAULT 'ABIERTO',
+    Orden INT NOT NULL CONSTRAINT DF_TemasProyecto_Orden DEFAULT 0,
+    Porcentaje TINYINT NOT NULL CONSTRAINT DF_TemasProyecto_Porcentaje DEFAULT 0,
     FechaCreacion DATETIME2 NOT NULL CONSTRAINT DF_TemasProyecto_FechaCreacion DEFAULT GETDATE(),
     FechaActualizacion DATETIME2 NULL,
+    CONSTRAINT CK_TemasProyecto_Estado
+        CHECK (Estado IN ('ABIERTO','EN_REVISION','RESUELTO','CERRADO','EN_PROGRESO')),
+    CONSTRAINT CK_TemasProyecto_Porcentaje
+        CHECK (Porcentaje BETWEEN 0 AND 100),
     CONSTRAINT FK_Tema_Proyecto
         FOREIGN KEY (IdProyecto) REFERENCES dbo.Proyectos(Id) ON DELETE CASCADE,
     CONSTRAINT FK_Tema_Creador
@@ -338,7 +345,62 @@ GO
 
 CREATE INDEX IX_TemasProyecto_IdCreador
     ON dbo.TemasProyecto(IdCreador, Estado)
-    INCLUDE (IdProyecto, Titulo, FechaCreacion);
+    INCLUDE (IdProyecto, Titulo, FechaCreacion, Porcentaje);
+GO
+
+CREATE INDEX IX_TemasProyecto_IdProyecto_Orden
+    ON dbo.TemasProyecto(IdProyecto, Orden)
+    INCLUDE (Id, Titulo, Estado, Porcentaje);
+GO
+
+CREATE TABLE dbo.TemasProyectoItems (
+    Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TemasProyectoItems PRIMARY KEY DEFAULT NEWID(),
+    IdTema UNIQUEIDENTIFIER NOT NULL,
+    Titulo NVARCHAR(255) NOT NULL,
+    Descripcion NVARCHAR(MAX) NULL,
+    Estado VARCHAR(30) NOT NULL CONSTRAINT DF_TemasProyectoItems_Estado DEFAULT 'PENDIENTE',
+    Orden INT NOT NULL CONSTRAINT DF_TemasProyectoItems_Orden DEFAULT 0,
+    FechaCreacion DATETIME2 NOT NULL CONSTRAINT DF_TemasProyectoItems_FechaCreacion DEFAULT GETDATE(),
+    FechaActualizacion DATETIME2 NULL,
+    CONSTRAINT CK_TemasProyectoItems_Estado
+        CHECK (Estado IN ('PENDIENTE','EN_PROGRESO','COMPLETADO','BLOQUEADO')),
+    CONSTRAINT FK_TemaItem_Tema
+        FOREIGN KEY (IdTema) REFERENCES dbo.TemasProyecto(Id) ON DELETE CASCADE
+);
+GO
+
+CREATE INDEX IX_TemasProyectoItems_IdTema_Orden
+    ON dbo.TemasProyectoItems(IdTema, Orden)
+    INCLUDE (Id, Titulo, Estado);
+GO
+
+CREATE INDEX IX_TemasProyectoItems_IdTema_Estado
+    ON dbo.TemasProyectoItems(IdTema, Estado)
+    INCLUDE (Id);
+GO
+
+CREATE TABLE dbo.TemasProyectoItemMiembros (
+    Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TemasProyectoItemMiembros PRIMARY KEY DEFAULT NEWID(),
+    IdTemaItem UNIQUEIDENTIFIER NOT NULL,
+    IdMiembroProyecto UNIQUEIDENTIFIER NOT NULL,
+    FechaAsignacion DATETIME2 NOT NULL CONSTRAINT DF_TemasProyectoItemMiembros_FechaAsignacion DEFAULT GETDATE(),
+    CONSTRAINT UQ_TemasProyectoItemMiembros_Item_Miembro
+        UNIQUE (IdTemaItem, IdMiembroProyecto),
+    CONSTRAINT FK_TemaItemMiembro_Item
+        FOREIGN KEY (IdTemaItem) REFERENCES dbo.TemasProyectoItems(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_TemaItemMiembro_Miembro
+        FOREIGN KEY (IdMiembroProyecto) REFERENCES dbo.MiembrosProyecto(Id) ON DELETE NO ACTION
+);
+GO
+
+CREATE INDEX IX_TemasProyectoItemMiembros_IdTemaItem
+    ON dbo.TemasProyectoItemMiembros(IdTemaItem)
+    INCLUDE (IdMiembroProyecto, FechaAsignacion);
+GO
+
+CREATE INDEX IX_TemasProyectoItemMiembros_IdMiembroProyecto
+    ON dbo.TemasProyectoItemMiembros(IdMiembroProyecto)
+    INCLUDE (IdTemaItem);
 GO
 
 CREATE TABLE dbo.Reuniones (
@@ -397,9 +459,42 @@ CREATE TABLE dbo.ActasReunion (
 GO
 
 CREATE INDEX IX_ActasReunion_IdCreador
-    ON dbo.ActasReunion(IdCreador)
-    INCLUDE (IdReunion);
+    ON dbo.ActasReunion(IdCreador);
 GO
+
+-- ============================================================
+--  VINCULACIÓN REUNIONES <-> TEMAS (many-to-many)
+-- ============================================================
+
+CREATE TABLE dbo.ReunionesTemasVinculados (
+    IdReunion           UNIQUEIDENTIFIER NOT NULL,
+    IdTema              UNIQUEIDENTIFIER NOT NULL,
+    IdUsuarioVinculante UNIQUEIDENTIFIER NULL,
+    FechaVinculacion    DATETIME2 NOT NULL
+        CONSTRAINT DF_ReunionesTemasVinculados_FechaVinculacion DEFAULT GETDATE(),
+    CONSTRAINT PK_ReunionesTemasVinculados
+        PRIMARY KEY CLUSTERED (IdReunion, IdTema),
+    CONSTRAINT FK_RTV_Reunion
+        FOREIGN KEY (IdReunion) REFERENCES dbo.Reuniones(Id) ON DELETE CASCADE,
+    CONSTRAINT FK_RTV_Tema
+        FOREIGN KEY (IdTema) REFERENCES dbo.TemasProyecto(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_RTV_Vinculante
+        FOREIGN KEY (IdUsuarioVinculante) REFERENCES dbo.Usuarios(Id) ON DELETE NO ACTION
+);
+GO
+
+CREATE NONCLUSTERED INDEX IX_RTV_IdTema
+    ON dbo.ReunionesTemasVinculados(IdTema, IdReunion);
+GO
+
+CREATE NONCLUSTERED INDEX IX_RTV_IdUsuarioVinculante
+    ON dbo.ReunionesTemasVinculados(IdUsuarioVinculante, IdReunion, IdTema);
+GO
+
+-- IMPORTANTE (MSSQL 2014): FK FK_RTV_Tema y FK_RTV_Vinculante son ON DELETE NO_ACTION
+-- para evitar ciclos con las CASCADE existentes de TemasProyecto -> Proyectos
+-- y Reuniones -> Proyectos. La limpieza de RTV al borrar un Tema o un Usuario
+-- se realiza MANUALMENTE EN LOS CONTROLADORES (manual cleanup, ver project_memory).
 
 -- ============================================================
 --  3. RECURSOS
