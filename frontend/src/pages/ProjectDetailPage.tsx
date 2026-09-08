@@ -54,6 +54,7 @@ import {
   TransferDialog,
 } from '../components/project/ProjectExtraModals'
 import ConfirmReplaceActaModal from '../components/project/ConfirmReplaceActaModal'
+import ProjectTopicsTab from '../components/project/ProjectTopicsTab'
 import {
   ApiProjectStatus,
   deleteProject,
@@ -109,6 +110,16 @@ import {
   fetchMeetings,
   updateMeeting as apiUpdateMeeting,
 } from '../services/meetings.service'
+import {
+  ApiTopic,
+  ApiTopicStatus,
+  CreateTopicPayload,
+  UpdateTopicPayload,
+  createTopic as apiCreateTopic,
+  deleteTopic as apiDeleteTopic,
+  fetchTopics,
+  updateTopic as apiUpdateTopic,
+} from '../services/project-topics.service'
 import {
   fetchMeetingParticipants,
   upsertMeetingParticipant,
@@ -210,6 +221,20 @@ function ProjectDetailPage() {
     file: File | null
     previousFileId: string | null
   }>({ open: false, meetingId: null, file: null, previousFileId: null })
+  const [topicsPage, setTopicsPage] = useState(1)
+  const [topicsPageSize] = useState(20)
+  const [topicsSearch, setTopicsSearch] = useState('')
+  const [topicsStatusFilter, setTopicsStatusFilter] = useState<ApiTopicStatus | ''>('')
+  const [showNewTopic, setShowNewTopic] = useState(false)
+  const [editingTopic, setEditingTopic] = useState<ApiTopic | null>(null)
+  const [newTopicTitle, setNewTopicTitle] = useState('')
+  const [newTopicStatus, setNewTopicStatus] = useState<ApiTopicStatus>('OPEN')
+  const [newTopicError, setNewTopicError] = useState('')
+  const [editTopicTitle, setEditTopicTitle] = useState('')
+  const [editTopicStatus, setEditTopicStatus] = useState<ApiTopicStatus>('OPEN')
+  const [editTopicError, setEditTopicError] = useState('')
+  const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<ApiTopic | null>(null)
+  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null)
   const TREE_MIN_W = 180
   const TREE_MAX_W = 420
 
@@ -419,6 +444,31 @@ function ProjectDetailPage() {
     staleTime: 60_000,
   })
 
+  const topicsQuery = useQuery({
+    queryKey: [
+      'project',
+      'topics',
+      projectId,
+      {
+        page: topicsPage,
+        pageSize: topicsPageSize,
+        search: topicsSearch.trim(),
+        status: topicsStatusFilter || undefined,
+      },
+    ],
+    queryFn: () =>
+      fetchTopics({
+        projectId,
+        page: topicsPage,
+        pageSize: topicsPageSize,
+        search: topicsSearch.trim() || undefined,
+        status: topicsStatusFilter || undefined,
+      }),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
+    retry: 1,
+  })
+
   const detailIsLoading = projectQuery.isLoading && projectQuery.fetchStatus !== 'idle'
   const detailIs404 = projectQuery.isError && (projectQuery.error as any)?.message?.toLowerCase().includes('no encontrado')
 
@@ -436,6 +486,7 @@ function ProjectDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
+    queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
     if (expandedMeetingId) {
       queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId] })
     }
@@ -526,6 +577,18 @@ function ProjectDetailPage() {
   }, [project, authUser])
 
   const canDeleteMeetings = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const canEditTopics = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const canDeleteTopics = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
     return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
@@ -765,6 +828,92 @@ function ProjectDetailPage() {
       updateMeetingMutation.mutate({ meetingId: editingMeeting.id, patch: payload })
     } else {
       createMeetingMutation.mutate(payload)
+    }
+  }
+
+  const createTopicMutation = useMutation({
+    mutationFn: (payload: CreateTopicPayload) => apiCreateTopic(projectId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
+      invalidateDetail()
+      setShowNewTopic(false)
+      setEditingTopic(null)
+      setNewTopicTitle('')
+      setNewTopicStatus('OPEN')
+      setNewTopicError('')
+      setPageToast({ kind: 'success', title: 'Tema creado', message: 'El tema se registró correctamente en el proyecto.' })
+    },
+    onError: (err: unknown) => {
+      setNewTopicError(err instanceof Error ? err.message : 'Error desconocido')
+    },
+  })
+
+  const updateTopicMutation = useMutation({
+    mutationFn: (payload: { topicId: string; patch: UpdateTopicPayload }) =>
+      apiUpdateTopic(projectId, payload.topicId, payload.patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
+      invalidateDetail()
+      setShowNewTopic(false)
+      setEditingTopic(null)
+      setEditTopicTitle('')
+      setEditTopicStatus('OPEN')
+      setEditTopicError('')
+      setPageToast({ kind: 'success', title: 'Tema actualizado', message: 'Se guardaron los cambios del tema.' })
+    },
+    onError: (err: unknown) => {
+      setEditTopicError(err instanceof Error ? err.message : 'Error desconocido')
+    },
+  })
+
+  const deleteTopicMutation = useMutation({
+    mutationFn: (topicId: string) => apiDeleteTopic(projectId, topicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
+      invalidateDetail()
+      setConfirmDeleteTopic(null)
+      setExpandedTopicId((prev) => prev === (confirmDeleteTopic?.id ?? null) ? null : prev)
+      setPageToast({ kind: 'success', title: 'Tema eliminado', message: 'El tema se retiró del proyecto.' })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo eliminar el tema',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const openNewTopic = () => {
+    setNewTopicTitle('')
+    setNewTopicStatus('OPEN')
+    setNewTopicError('')
+    setEditingTopic(null)
+    setShowNewTopic(true)
+  }
+
+  const openEditTopic = (t: ApiTopic) => {
+    setEditTopicTitle(t.title)
+    setEditTopicStatus(t.status)
+    setEditTopicError('')
+    setEditingTopic(t)
+    setShowNewTopic(true)
+  }
+
+  const handleSubmitTopic = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (editingTopic) {
+      const title = editTopicTitle.trim()
+      if (title.length === 0) { setEditTopicError('El título es obligatorio'); return }
+      if (title.length > 255) { setEditTopicError('Máximo 255 caracteres'); return }
+      setEditTopicError('')
+      updateTopicMutation.mutate({ topicId: editingTopic.id, patch: { title, status: editTopicStatus } })
+    } else {
+      const title = newTopicTitle.trim()
+      if (title.length === 0) { setNewTopicError('El título es obligatorio'); return }
+      if (title.length > 255) { setNewTopicError('Máximo 255 caracteres'); return }
+      setNewTopicError('')
+      createTopicMutation.mutate({ title, status: newTopicStatus })
     }
   }
 
@@ -1530,7 +1679,52 @@ function ProjectDetailPage() {
         />
       )}
 
-      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && (
+      {activeTab === 'topics' && (
+        <ProjectTopicsTab
+          topicsSearch={topicsSearch}
+          setTopicsSearch={setTopicsSearch}
+          topicsStatusFilter={topicsStatusFilter}
+          setTopicsStatusFilter={setTopicsStatusFilter}
+          topicsPage={topicsPage}
+          setTopicsPage={setTopicsPage}
+          canEditTopics={canEditTopics}
+          canDeleteTopics={canDeleteTopics}
+          topicsLoading={topicsQuery.isLoading}
+          topicsFetchStatus={topicsQuery.fetchStatus}
+          topicsIsError={topicsQuery.isError}
+          topicsItems={topicsQuery.data?.items}
+          topicsTotal={topicsQuery.data?.total}
+          topicsTotalPages={topicsQuery.data?.totalPages}
+          topicsCurrentPage={topicsQuery.data?.page}
+          expandedTopicId={expandedTopicId}
+          setExpandedTopicId={setExpandedTopicId}
+          showNewTopic={showNewTopic}
+          setShowNewTopic={setShowNewTopic}
+          editingTopic={editingTopic}
+          newTopicTitle={newTopicTitle}
+          newTopicStatus={newTopicStatus}
+          newTopicError={newTopicError}
+          setNewTopicTitle={setNewTopicTitle}
+          setNewTopicStatus={setNewTopicStatus}
+          editTopicTitle={editTopicTitle}
+          editTopicStatus={editTopicStatus}
+          editTopicError={editTopicError}
+          setEditTopicTitle={setEditTopicTitle}
+          setEditTopicStatus={setEditTopicStatus}
+          confirmDeleteTopic={confirmDeleteTopic}
+          setConfirmDeleteTopic={setConfirmDeleteTopic}
+          createTopicPending={createTopicMutation.isPending}
+          updateTopicPending={updateTopicMutation.isPending}
+          deleteTopicPending={deleteTopicMutation.isPending}
+          onNewTopic={openNewTopic}
+          onEditTopic={openEditTopic}
+          onSubmitTopic={handleSubmitTopic}
+          onConfirmDeleteTopic={() => { if (confirmDeleteTopic) deleteTopicMutation.mutate(confirmDeleteTopic.id) }}
+          formatRelativeTime={formatRelativeTime}
+        />
+      )}
+
+      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && activeTab !== 'topics' && (
         <div className="flex-1 flex items-center justify-center text-center p-8 overflow-y-auto">
           <div className="text-muted-foreground">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-surface-secondary flex items-center justify-center mb-4">

@@ -1,4 +1,39 @@
 import type { ApiMeetingStatus } from '@/services/meetings.service'
+import type { ApiTopicStatus } from '@/services/project-topics.service'
+
+export function topicStatusLabel(status: ApiTopicStatus): string {
+  switch (status) {
+    case 'OPEN':
+      return 'Abierto'
+    case 'IN_REVIEW':
+      return 'En revisión'
+    case 'RESOLVED':
+      return 'Resuelto'
+    case 'CLOSED':
+      return 'Cerrado'
+    case 'IN_PROGRESS':
+      return 'En progreso'
+    default:
+      return status
+  }
+}
+
+export function topicStatusBadgeClass(status: ApiTopicStatus): string {
+  switch (status) {
+    case 'OPEN':
+      return 'bg-brand-500/20 text-brand-700 dark:text-brand-300'
+    case 'IN_REVIEW':
+      return 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
+    case 'RESOLVED':
+      return 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+    case 'CLOSED':
+      return 'bg-gray-500/25 text-emerald-800 dark:text-emerald-200'
+    case 'IN_PROGRESS':
+      return 'bg-status-review/20 text-amber-700 dark:text-amber-300'
+    default:
+      return 'bg-surface-secondary text-muted-foreground'
+  }
+}
 import type { ApiFileType } from '@/services/files.service'
 import {
   Folder,
