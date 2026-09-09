@@ -20,8 +20,27 @@ export interface ApiFile {
   s3ETag: string | null
   s3VersionId: string | null
   checksumSHA256: string | null
+  currentVersionId: string | null
+  currentVersionNumber: number | null
+  versionCount: number | null
   createdAt: string
   updatedAt: string | null
+}
+
+export interface ApiFileVersion {
+  id: string
+  fileId: string
+  versionNumber: number
+  s3Bucket: string | null
+  s3Key: string | null
+  hash: string | null
+  uploadedBy: string | null
+  uploadedByName: string | null
+  uploadedByEmail: string | null
+  comment: string | null
+  size: number | null
+  createdAt: string
+  downloadUrl: string
 }
 
 export type ApiFileType = 'folder' | 'file' | 'video' | 'audio' | 'image' | 'pdf' | 'doc' | 'sheet' | 'slide' | 'zip' | 'link'
@@ -174,4 +193,57 @@ export async function uploadFile(params: {
     throw new Error(res.data?.message || 'No se pudo subir el archivo')
   }
   return res.data.data
+}
+
+export async function fetchFileVersions(fileId: string): Promise<ApiFileVersion[]> {
+  const res = await api.get<ApiResponse<ApiFileVersion[]>>(`/archivos/${fileId}/versiones`)
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudieron cargar las versiones')
+  }
+  return res.data.data
+}
+
+export async function fetchFileVersion(fileId: string, versionId: string): Promise<ApiFileVersion> {
+  const res = await api.get<ApiResponse<ApiFileVersion>>(`/archivos/${fileId}/versiones/${versionId}`)
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo cargar la versión')
+  }
+  return res.data.data
+}
+
+export async function uploadFileVersion(params: {
+  fileId: string
+  file: File
+  comment?: string
+  onProgress?: (percent: number) => void
+}): Promise<ApiFileVersion> {
+  const data = new FormData()
+  if (params.comment) data.append('comment', params.comment)
+  data.append('file', params.file)
+  const res = await api.post<ApiResponse<ApiFileVersion>>(`/archivos/${params.fileId}/versiones`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (ev) => {
+      if (!params.onProgress || !ev.total) return
+      params.onProgress(Math.min(100, Math.round((ev.loaded * 100) / ev.total)))
+    },
+  })
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo subir la nueva versión')
+  }
+  return res.data.data
+}
+
+export async function setFileCurrentVersion(fileId: string, versionId: string): Promise<ApiFile> {
+  const res = await api.patch<ApiResponse<ApiFile>>(`/archivos/${fileId}/versiones/${versionId}/actual`)
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo establecer la versión actual')
+  }
+  return res.data.data
+}
+
+export async function deleteFileVersion(fileId: string, versionId: string): Promise<void> {
+  const res = await api.delete(`/archivos/${fileId}/versiones/${versionId}`)
+  if (res.status !== 204) {
+    throw new Error('No se pudo eliminar la versión')
+  }
 }

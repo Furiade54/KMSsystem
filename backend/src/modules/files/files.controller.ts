@@ -1,6 +1,24 @@
 import type { Request, Response, NextFunction } from 'express'
 import multer from 'multer'
-import { uploadFile, listFiles, listAllFiles, getFileById, deleteFileById, verifyLocalDownloadSignature, updateFileById, copyFileById, commentFileById, listFileComments, updateFileCommentById, deleteFileCommentById } from './files.service'
+import {
+  uploadFile,
+  listFiles,
+  listAllFiles,
+  getFileById,
+  deleteFileById,
+  verifyLocalDownloadSignature,
+  updateFileById,
+  copyFileById,
+  commentFileById,
+  listFileComments,
+  updateFileCommentById,
+  deleteFileCommentById,
+  listFileVersions,
+  getFileVersionById,
+  uploadNewVersion,
+  setCurrentFileVersion,
+  deleteFileVersion,
+} from './files.service'
 import { getStorageProvider } from '../../shared/storage'
 import type { ApiResponse, PaginatedResult } from '../../../../packages/shared-types/src'
 
@@ -190,6 +208,68 @@ export async function deleteFileCommentEndpoint(
     const fileId = String(req.params.id)
     const cid = String(req.params.cid)
     await deleteFileCommentById(auth, fileId, cid, { req })
+    res.status(204).end()
+  } catch (e) { next(e) }
+}
+
+export async function listFileVersionsEndpoint(
+  req: Request,
+  res: Response<ApiResponse<any[]>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const items = await listFileVersions(auth, String(req.params.id))
+    res.status(200).json({ success: true, data: items })
+  } catch (e) { next(e) }
+}
+
+export async function getFileVersionEndpoint(
+  req: Request,
+  res: Response<ApiResponse<any>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const item = await getFileVersionById(auth, String(req.params.id), String(req.params.versionId))
+    res.status(200).json({ success: true, data: item })
+  } catch (e) { next(e) }
+}
+
+export async function uploadFileVersionEndpoint(
+  req: Request,
+  res: Response<ApiResponse<any>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const file = req.file
+    const comment = req.body && req.body.comment != null ? String(req.body.comment) : undefined
+    const result = await uploadNewVersion(auth, String(req.params.id), file!, { comment }, { req })
+    res.status(201).json({ success: true, data: result })
+  } catch (e) { next(e) }
+}
+
+export async function setCurrentFileVersionEndpoint(
+  req: Request,
+  res: Response<ApiResponse<any>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const file = await setCurrentFileVersion(auth, String(req.params.id), String(req.params.versionId), { req })
+    res.status(200).json({ success: true, data: file })
+  } catch (e) { next(e) }
+}
+
+export async function deleteFileVersionEndpoint(
+  req: Request,
+  res: Response<ApiResponse<void>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    await deleteFileVersion(auth, String(req.params.id), String(req.params.versionId), { req })
     res.status(204).end()
   } catch (e) { next(e) }
 }

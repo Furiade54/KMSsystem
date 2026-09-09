@@ -30,12 +30,24 @@ import {
 import {
   ApiFile,
   ApiFileComment,
+  ApiFileVersion,
   commentFile as apiCommentFile,
+  deleteFileVersion,
   fetchFileById,
+  fetchFileVersions,
   fileKind,
   formatBytes,
   listFileComments,
+  setFileCurrentVersion,
+  uploadFileVersion,
 } from '@/services/files.service'
+import { FileVersionHistoryList } from '../project/project-file-versions/FileVersionHistoryList'
+import { useFileVersionForms } from '../project/project-file-versions/useFileVersionForms'
+import type {
+  FileVersionCallbacks,
+  FileVersionMutationsPending,
+} from '../project/project-file-versions/types'
+import { useAuthStore } from '@/store/authStore'
 import { ApiFolder, fetchFolderById } from '@/services/folders.service'
 import {
   ApiProject,
@@ -708,6 +720,58 @@ function FilePanel({
     onError: (err: unknown) =>
       setNewCommentError(err instanceof Error ? err.message : 'Error desconocido'),
   })
+
+  const authUser = useAuthStore((s) => s.user)
+
+  const fileVersionsQuery = useQuery({
+    queryKey: ['file', 'versions', resource.id],
+    queryFn: () => fetchFileVersions(resource.id),
+    staleTime: 45_000,
+    retry: 1,
+  })
+
+  const fileVersionsForms = useFileVersionForms()
+
+  const uploadVersionMutation = useMutation({
+    mutationFn: (payload: { file: File; comment: string | null }) =>
+      uploadFileVersion({
+        fileId: resource.id,
+        file: payload.file,
+        comment: payload.comment ?? undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['file', 'versions', resource.id] })
+      queryClient.invalidateQueries({ queryKey: ['file', 'detail', resource.id] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', resource.projectId] })
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
+      fileVersionsForms.setUploadFile(null)
+      fileVersionsForms.setUploadComment('')
+      fileVersionsForms.toggleShowUpload()
+      fileVersionsForms.setUploadError(null)
+    },
+    onError: (err: unknown) =>
+      fileVersionsForms.setUploadError(err instanceof Error ? err.message : 'Error desconocido'),
+  })
+
+  const setCurrentVersionMutation = useMutation({
+    mutationFn: (versionId: string) => setFileCurrentVersion(resource.id, versionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['file', 'detail', resource.id] })
+      queryClient.invalidateQueries({ queryKey: ['file', 'versions', resource.id] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', resource.projectId] })
+    },
+  })
+
+  const deleteVersionMutation = useMutation({
+    mutationFn: (versionId: string) => deleteFileVersion(resource.id, versionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['file', 'detail', resource.id] })
+      queryClient.invalidateQueries({ queryKey: ['file', 'versions', resource.id] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', resource.projectId] })
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
+    },
+  })
+
   useEffect(() => {
     if (tab !== 'comments') return
     const t = setTimeout(() => {
@@ -826,6 +890,67 @@ function FilePanel({
                 />
               </section>
             ) : null}
+
+            <section className="border-t border-border pt-3 mt-3">
+              <SectionTitle>
+                📜 Versiones ({f.versionCount ?? fileVersionsQuery.data?.length ?? 0})
+              </SectionTitle>
+              {(f.currentVersionNumber != null || (fileVersionsQuery.data && fileVersionsQuery.data.length > 0)) && (
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="inline-flex items-center rounded-md bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    V{String(f.currentVersionNumber ?? '—')}
+                  </span>
+                  <span>Versión actual activa · usada por actas, doc. maestro y comentarios</span>
+                </div>
+              )}
+              {(() => {
+                const canEdit = !!authUser
+                const authIdLower = authUser?.id ? String(authUser.id).toLowerCase() : null
+                const ownerIdLower = f.ownerId ? String(f.ownerId).toLowerCase() : null
+                const canManage = !!authUser && (!!authUser.isOrgAdmin || (authIdLower != null && authIdLower === ownerIdLower))
+
+                const pending: FileVersionMutationsPending = {
+                  uploadVersion: uploadVersionMutation.isPending,
+                  setCurrentVersion: setCurrentVersionMutation.isPending,
+                  deleteVersion: deleteVersionMutation.isPending,
+                }
+                const callbacks: FileVersionCallbacks = {
+                  canEdit,
+                  canManage,
+                  onSetCurrent: async (versionId: string) => {
+                    await setCurrentVersionMutation.mutateAsync(versionId)
+                  },
+                  onDelete: async (versionId: string) => {
+                    await deleteVersionMutation.mutateAsync(versionId)
+                  },
+                  onDownload: (_version: ApiFileVersion) => {
+                  },
+                  onUploadNew: async (file: File, comment: string | null) => {
+                    await uploadVersionMutation.mutateAsync({ file, comment })
+                  },
+                }
+                return (
+                  <FileVersionHistoryList
+                    items={fileVersionsQuery.data ?? []}
+                    currentVersionId={f.currentVersionId}
+                    pending={pending}
+                    callbacks={callbacks}
+                    uiState={fileVersionsForms}
+                    formatBytes={formatBytes}
+                  />
+                )
+              })()}
+              {fileVersionsQuery.isLoading && !fileVersionsQuery.data && (
+                <div className="text-xs text-muted-foreground italic py-2">Cargando versiones…</div>
+              )}
+              {fileVersionsQuery.isError && (
+                <div className="text-[11px] rounded-md p-2 bg-status-blocked/15 border border-status-blocked/40 text-destructive/90 mt-2">
+                  {fileVersionsQuery.error instanceof Error
+                    ? fileVersionsQuery.error.message
+                    : 'Error al cargar las versiones'}
+                </div>
+              )}
+            </section>
           </>
         )}
         {tab === 'activity' && (

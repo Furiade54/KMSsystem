@@ -14,6 +14,11 @@ import {
   listFileCommentsEndpoint,
   updateFileCommentEndpoint,
   deleteFileCommentEndpoint,
+  listFileVersionsEndpoint,
+  getFileVersionEndpoint,
+  uploadFileVersionEndpoint,
+  setCurrentFileVersionEndpoint,
+  deleteFileVersionEndpoint,
 } from './files.controller'
 import { shareFileEndpoint } from '../shares/shares.controller'
 import {
@@ -34,6 +39,11 @@ filesRouter.get('/:id', requireResourcePermission('FILE', 'VER'), getFileEndpoin
 filesRouter.patch('/:id', requireResourcePermission('FILE', 'EDITAR'), updateFileEndpoint)
 filesRouter.post('/:id/copy', requireResourcePermission('FILE', 'EDITAR'), copyFileEndpoint)
 filesRouter.post('/:id/compartir', requireResourcePermission('FILE', 'COMPARTIR'), shareFileEndpoint)
+filesRouter.get('/:id/versiones', requireResourcePermission('FILE', 'VER'), listFileVersionsEndpoint)
+filesRouter.get('/:id/versiones/:versionId', requireResourcePermission('FILE', 'VER'), getFileVersionEndpoint)
+filesRouter.post('/:id/versiones', requireResourcePermission('FILE', 'EDITAR'), uploadMiddleware, uploadFileVersionEndpoint)
+filesRouter.patch('/:id/versiones/:versionId/actual', requireResourcePermission('FILE', 'EDITAR'), setCurrentFileVersionEndpoint)
+filesRouter.delete('/:id/versiones/:versionId', requireResourcePermission('FILE', 'ADMINISTRAR'), deleteFileVersionEndpoint)
 filesRouter.get('/:id/comentarios', requireResourcePermission('FILE', 'VER'), listFileCommentsEndpoint)
 filesRouter.post('/:id/comentarios', requireResourcePermission('FILE', 'COMENTAR'), commentFileEndpoint)
 filesRouter.patch('/:id/comentarios/:cid', requireResourcePermission('FILE', 'COMENTAR'), updateFileCommentEndpoint)

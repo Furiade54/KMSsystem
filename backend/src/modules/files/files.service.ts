@@ -26,8 +26,27 @@ export interface ArchivoDto {
   s3ETag: string | null
   s3VersionId: string | null
   checksumSHA256: string | null
+  currentVersionId: string | null
+  currentVersionNumber: number | null
+  versionCount: number | null
   createdAt: string
   updatedAt: string | null
+}
+
+export interface FileVersionDto {
+  id: string
+  fileId: string
+  versionNumber: number
+  s3Bucket: string | null
+  s3Key: string | null
+  hash: string | null
+  uploadedBy: string | null
+  uploadedByName: string | null
+  uploadedByEmail: string | null
+  comment: string | null
+  size: number | null
+  createdAt: string
+  downloadUrl: string
 }
 
 function mapArchivo(
@@ -50,6 +69,9 @@ function mapArchivo(
     FechaActualizacion: Date | null
     OwnerNombre?: string | null
     OwnerCorreo?: string | null
+    IdVersionActual?: string | null
+    CurrentVersionNumber?: number | null
+    VersionCount?: number | null
   },
   downloadUrl: string
 ): ArchivoDto {
@@ -74,6 +96,9 @@ function mapArchivo(
     s3ETag: row.S3ETag ?? null,
     s3VersionId: row.S3VersionId ?? null,
     checksumSHA256: row.ChecksumSHA256 ?? null,
+    currentVersionId: row.IdVersionActual ? String(row.IdVersionActual) : null,
+    currentVersionNumber: row.CurrentVersionNumber != null ? Number(row.CurrentVersionNumber) : null,
+    versionCount: row.VersionCount != null ? Number(row.VersionCount) : null,
   }
 }
 
@@ -181,11 +206,32 @@ export async function uploadFile(
     WHERE Id=@id
   `)
 
+  const ver1Req = pool.request()
+  ver1Req.input('idArchivo', sql.UniqueIdentifier, id)
+  ver1Req.input('numeroVersion', sql.Int, 1)
+  ver1Req.input('bucket', sql.NVarChar(200), bucket)
+  ver1Req.input('clave', sql.NVarChar(sql.MAX), storageKey)
+  ver1Req.input('hash', sql.VarChar(256), sha256)
+  ver1Req.input('cargador', sql.UniqueIdentifier, auth.userId)
+  ver1Req.input('tamano', sql.BigInt, Number(file.size || 0))
+  const vIdRow = await ver1Req.query(`
+    DECLARE @VId UNIQUEIDENTIFIER = NEWID();
+    INSERT INTO VersionesArchivo (Id,IdArchivo,NumeroVersion,BucketS3,ClaveS3,Hash,IdCargador,Tamano)
+    VALUES (@VId,@idArchivo,@numeroVersion,@bucket,@clave,@hash,@cargador,@tamano);
+    UPDATE Archivos SET IdVersionActual=@VId WHERE Id=@idArchivo;
+    SELECT @VId AS Vid;
+  `)
+  const vId = vIdRow.recordset[0]?.Vid
+
   const getReq = pool.request()
   getReq.input('id', sql.UniqueIdentifier, id)
   const row = await getReq.query(`
-    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo
-    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario WHERE a.Id=@id
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
+    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
+    WHERE a.Id=@id
   `)
   if (!row.recordset.length) throw new NotFoundError('Archivo no encontrado')
   const finalRow = row.recordset[0]
@@ -197,7 +243,7 @@ export async function uploadFile(
     resourceType: 'file',
     resourceId: id,
     resourceName: name,
-    extra: { folderId: body.folderId ? String(body.folderId) : null, sizeBytes: Number(file.size || 0) },
+    extra: { folderId: body.folderId ? String(body.folderId) : null, sizeBytes: Number(file.size || 0), versionId: vId ? String(vId) : undefined },
     req: opts?.req ?? null,
   })
   return mapArchivo(finalRow, downloadUrl)
@@ -238,8 +284,11 @@ export async function listFiles(
   dReq.input('offset', sql.Int, offset)
   dReq.input('limit', sql.Int, pageSize)
   const rows = await dReq.query(`
-    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
     FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
     ${whereClause}
     ORDER BY a.FechaActualizacion DESC, a.FechaCreacion DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
@@ -291,10 +340,13 @@ export async function listAllFiles(
   dReq.input('offset', sql.Int, offset)
   dReq.input('limit', sql.Int, pageSize)
   const rows = await dReq.query(`
-    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo, p.Nombre AS ProjectName
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo, p.Nombre AS ProjectName,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
     FROM Archivos a
     LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
     LEFT JOIN Proyectos p ON p.Id = a.IdProyecto
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
     ${whereClause}
     ORDER BY a.FechaActualizacion DESC, a.FechaCreacion DESC
     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
@@ -319,8 +371,12 @@ export async function getFileById(
   const g = pool.request()
   g.input('id', sql.UniqueIdentifier, id)
   const row = await g.query(`
-    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo
-    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario WHERE a.Id=@id
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
+    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
+    WHERE a.Id=@id
   `)
   if (!row.recordset.length) throw new NotFoundError('Archivo no encontrado')
   const r = row.recordset[0]
@@ -442,8 +498,12 @@ export async function updateFileById(
   const g2 = pool.request()
   g2.input('id', sql.UniqueIdentifier, id)
   const after = await g2.query(`
-    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo
-    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario WHERE a.Id=@id
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
+    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
+    WHERE a.Id=@id
   `)
   const storage = getStorageProvider()
   const finalRow = after.recordset[0]
@@ -584,11 +644,33 @@ export async function copyFileById(
     SET StorageKey=@storageKey, S3ETag=@etag, S3VersionId=@s3VersionId, FechaActualizacion=GETDATE()
     WHERE Id=@id
   `)
+
+  const ver1Req = pool.request()
+  ver1Req.input('idArchivo', sql.UniqueIdentifier, newId)
+  ver1Req.input('numeroVersion', sql.Int, 1)
+  ver1Req.input('bucket', sql.NVarChar(200), bucket)
+  ver1Req.input('clave', sql.NVarChar(sql.MAX), newKey)
+  ver1Req.input('hash', sql.VarChar(256), sha256)
+  ver1Req.input('cargador', sql.UniqueIdentifier, auth.userId)
+  ver1Req.input('tamano', sql.BigInt, Number(buf.length || putResult.sizeBytes || src.Tamano || 0))
+  const vIdRow = await ver1Req.query(`
+    DECLARE @VId UNIQUEIDENTIFIER = NEWID();
+    INSERT INTO VersionesArchivo (Id,IdArchivo,NumeroVersion,BucketS3,ClaveS3,Hash,IdCargador,Tamano)
+    VALUES (@VId,@idArchivo,@numeroVersion,@bucket,@clave,@hash,@cargador,@tamano);
+    UPDATE Archivos SET IdVersionActual=@VId WHERE Id=@idArchivo;
+    SELECT @VId AS Vid;
+  `)
+  const vId = vIdRow.recordset[0]?.Vid
+
   const getReq = pool.request()
   getReq.input('id', sql.UniqueIdentifier, newId)
   const detail = await getReq.query(`
-    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo
-    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario WHERE a.Id=@id
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
+    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
+    WHERE a.Id=@id
   `)
   const downloadUrl = await storage.getPresignedDownloadUrl(newKey)
   logAuditRecord({
@@ -598,7 +680,7 @@ export async function copyFileById(
     resourceType: 'file',
     resourceId: newId,
     resourceName: baseName,
-    extra: { copiedFrom: String(src.Id), toFolder: targetFolderId ? String(targetFolderId) : null },
+    extra: { copiedFrom: String(src.Id), toFolder: targetFolderId ? String(targetFolderId) : null, versionId: vId ? String(vId) : undefined },
     req: callOpts?.req ?? null,
   })
   return mapArchivo(detail.recordset[0], downloadUrl)
@@ -606,6 +688,339 @@ export async function copyFileById(
 
 export function buildStorageKeyFromRow(row: any): string {
   return buildStorageKey(row)
+}
+
+function mapFileVersion(
+  row: {
+    Id: string
+    IdArchivo: string
+    NumeroVersion: number
+    BucketS3: string | null
+    ClaveS3: string | null
+    Hash: string | null
+    IdCargador: string | null
+    Comentario: string | null
+    Tamano: number | null
+    FechaCreacion: Date
+    NombreCompleto?: string | null
+    Correo?: string | null
+  },
+  downloadUrl: string
+): FileVersionDto {
+  return {
+    id: String(row.Id),
+    fileId: String(row.IdArchivo),
+    versionNumber: Number(row.NumeroVersion),
+    s3Bucket: row.BucketS3 ?? null,
+    s3Key: row.ClaveS3 ?? null,
+    hash: row.Hash ?? null,
+    uploadedBy: row.IdCargador ? String(row.IdCargador) : null,
+    uploadedByName: row.NombreCompleto ?? null,
+    uploadedByEmail: row.Correo ?? null,
+    comment: row.Comentario ?? null,
+    size: row.Tamano != null ? Number(row.Tamano) : null,
+    createdAt: sqlLocalToIso(row.FechaCreacion as any),
+    downloadUrl,
+  }
+}
+
+export async function listFileVersions(
+  auth: { organizationId: string; userId: string },
+  fileId: string
+): Promise<FileVersionDto[]> {
+  const pool = await getDbPool()
+  const g = pool.request()
+  g.input('fileId', sql.UniqueIdentifier, fileId)
+  const row = await g.query<{ IdProyecto: string }>('SELECT IdProyecto FROM Archivos WHERE Id=@fileId')
+  if (!row.recordset.length) throw new NotFoundError('Archivo no encontrado')
+  const r = row.recordset[0]
+  await ensureProjectAccess(pool, auth, String(r.IdProyecto))
+  const q = pool.request()
+  q.input('fileId', sql.UniqueIdentifier, fileId)
+  const vers = await q.query(`
+    SELECT v.*, u.NombreCompleto, u.Correo
+    FROM VersionesArchivo v LEFT JOIN Usuarios u ON u.Id = v.IdCargador
+    WHERE v.IdArchivo = @fileId
+    ORDER BY v.NumeroVersion DESC
+  `)
+  const storage = getStorageProvider()
+  const items: FileVersionDto[] = []
+  for (const vr of vers.recordset) {
+    const key = vr.ClaveS3 || vr.BucketS3 || null
+    let url = ''
+    if (key) {
+      try { url = await storage.getPresignedDownloadUrl(key) } catch {}
+    }
+    items.push(mapFileVersion(vr, url))
+  }
+  return items
+}
+
+export async function getFileVersionById(
+  auth: { organizationId: string; userId: string },
+  fileId: string,
+  versionId: string
+): Promise<FileVersionDto> {
+  const pool = await getDbPool()
+  const g = pool.request()
+  g.input('fileId', sql.UniqueIdentifier, fileId)
+  g.input('versionId', sql.UniqueIdentifier, versionId)
+  const row = await g.query(`
+    SELECT v.*, u.NombreCompleto, u.Correo, a.IdProyecto
+    FROM VersionesArchivo v
+    LEFT JOIN Usuarios u ON u.Id = v.IdCargador
+    INNER JOIN Archivos a ON a.Id = v.IdArchivo
+    WHERE v.Id = @versionId AND v.IdArchivo = @fileId
+  `)
+  if (!row.recordset.length) throw new NotFoundError('Versión no encontrada')
+  const r = row.recordset[0]
+  await ensureProjectAccess(pool, auth, String(r.IdProyecto))
+  const storage = getStorageProvider()
+  const key = r.ClaveS3 || r.BucketS3 || null
+  let url = ''
+  if (key) {
+    try { url = await storage.getPresignedDownloadUrl(key) } catch {}
+  }
+  return mapFileVersion(r, url)
+}
+
+export async function uploadNewVersion(
+  auth: { organizationId: string; userId: string },
+  fileId: string,
+  file: Express.Multer.File,
+  body: { comment?: string },
+  opts?: { req?: Request | null }
+): Promise<FileVersionDto> {
+  if (!file) throw new AppError('Archivo requerido', 400)
+  const pool = await getDbPool()
+  const g = pool.request()
+  g.input('fileId', sql.UniqueIdentifier, fileId)
+  const row = await g.query('SELECT * FROM Archivos WHERE Id=@fileId')
+  if (!row.recordset.length) throw new NotFoundError('Archivo no encontrado')
+  const a = row.recordset[0]
+  await ensureProjectAccess(pool, auth, String(a.IdProyecto))
+
+  const storage = getStorageProvider()
+  const bucket = env.AWS_S3_BUCKET || null
+  const sha256 = crypto.createHash('sha256').update(file.buffer).digest('hex')
+  const providerName = storage.name
+
+  const storageKey = buildStorageKey({
+    IdProyecto: String(a.IdProyecto),
+    IdCarpeta: a.IdCarpeta ? String(a.IdCarpeta) : null,
+    Id: String(a.Id),
+    Nombre: String(a.Nombre),
+    Extension: a.Extension ? String(a.Extension) : null,
+  })
+  let putResult: { etag?: string; sizeBytes: number; s3VersionId?: string } | null = null
+  try {
+    const res = await storage.putObject(storageKey, file.buffer, {
+      contentType: file.mimetype || String(a.TipoMime || 'application/octet-stream'),
+      metadata: {
+        owner: auth.userId,
+        organization: auth.organizationId,
+        project: String(a.IdProyecto),
+        sha256,
+        previousVersionId: a.IdVersionActual ? String(a.IdVersionActual) : 'first',
+      },
+    })
+    putResult = { etag: res.etag?.replace(/^"|"$/g, ''), sizeBytes: res.sizeBytes, s3VersionId: (res as any).versionId }
+  } catch (e: any) {
+    throw e
+  }
+  const tr = pool.request()
+  tr.input('fileId', sql.UniqueIdentifier, fileId)
+  tr.input('cargador', sql.UniqueIdentifier, auth.userId)
+  tr.input('bucket', sql.NVarChar(200), bucket)
+  tr.input('clave', sql.NVarChar(sql.MAX), storageKey)
+  tr.input('hash', sql.VarChar(256), sha256)
+  tr.input('tamano', sql.BigInt, Number(file.size || putResult.sizeBytes || 0))
+  tr.input('comentario', sql.NVarChar(sql.MAX), body.comment ? String(body.comment).trim() || null : null)
+  tr.input('provider', sql.VarChar(10), providerName)
+  tr.input('etag', sql.VarChar(256), putResult.etag)
+  tr.input('s3VersionId', sql.VarChar(256), putResult.s3VersionId)
+  const verRow = await tr.query(`
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+    BEGIN TRANSACTION;
+    DECLARE @NuevoNum INT;
+    SELECT @NuevoNum = ISNULL(MAX(NumeroVersion), 0) + 1
+    FROM VersionesArchivo WITH (UPDLOCK, HOLDLOCK) WHERE IdArchivo = @fileId;
+    DECLARE @VId UNIQUEIDENTIFIER = NEWID();
+    INSERT INTO VersionesArchivo (Id,IdArchivo,NumeroVersion,BucketS3,ClaveS3,Hash,IdCargador,Comentario,Tamano)
+    VALUES (@VId,@fileId,@NuevoNum,@bucket,@clave,@hash,@cargador,@comentario,@tamano);
+    UPDATE Archivos SET
+      IdVersionActual = @VId,
+      StorageProvider = ISNULL(NULLIF(@provider,''), StorageProvider),
+      StorageKey = @clave,
+      S3Bucket = ISNULL(NULLIF(@bucket,''), S3Bucket),
+      S3ETag = @etag,
+      S3VersionId = @s3VersionId,
+      ChecksumSHA256 = @hash,
+      Tamano = @tamano,
+      FechaActualizacion = GETDATE()
+    WHERE Id = @fileId;
+    COMMIT TRANSACTION;
+    SELECT @VId AS Vid, @NuevoNum AS NumeroVersion;
+  `)
+  const vId = String(verRow.recordset[0].Vid)
+  const num = Number(verRow.recordset[0].NumeroVersion)
+
+  const detail = await pool.request().input('vid', sql.UniqueIdentifier, vId).query(`
+    SELECT v.*, u.NombreCompleto, u.Correo
+    FROM VersionesArchivo v LEFT JOIN Usuarios u ON u.Id = v.IdCargador
+    WHERE v.Id = @vid
+  `)
+  const downloadUrl = await storage.getPresignedDownloadUrl(storageKey)
+  logAuditRecord({
+    organizationId: auth.organizationId,
+    userId: auth.userId,
+    action: 'file.version.creada',
+    resourceType: 'file',
+    resourceId: fileId,
+    resourceName: String(a.Nombre),
+    extra: { versionId: vId, versionNumber: num, sizeBytes: Number(file.size || putResult.sizeBytes || 0) },
+    req: opts?.req ?? null,
+  })
+  return mapFileVersion(detail.recordset[0], downloadUrl)
+}
+
+export async function setCurrentFileVersion(
+  auth: { organizationId: string; userId: string },
+  fileId: string,
+  versionId: string,
+  opts?: { req?: Request | null }
+): Promise<ArchivoDto> {
+  const pool = await getDbPool()
+  const g = pool.request()
+  g.input('fileId', sql.UniqueIdentifier, fileId)
+  g.input('versionId', sql.UniqueIdentifier, versionId)
+  const row = await g.query(`
+    SELECT a.*,
+      v.IdArchivo AS VArchivo,
+      v.ClaveS3 AS VClaveS3,
+      v.BucketS3 AS VBucketS3,
+      v.Hash AS VHash,
+      v.Tamano AS VTamano
+    FROM Archivos a LEFT JOIN VersionesArchivo v ON v.Id=@versionId
+    WHERE a.Id=@fileId
+  `)
+  if (!row.recordset.length) throw new NotFoundError('Archivo o versión no encontrados')
+  const r = row.recordset[0]
+  if (!r.VArchivo || String(r.VArchivo).toLowerCase() !== String(fileId).toLowerCase()) {
+    throw new NotFoundError('Versión no pertenece a este archivo')
+  }
+  await ensureProjectAccess(pool, auth, String(r.IdProyecto))
+  const up = pool.request()
+  up.input('fileId', sql.UniqueIdentifier, fileId)
+  up.input('versionId', sql.UniqueIdentifier, versionId)
+  up.input('key', sql.NVarChar(1000), r.VClaveS3 ?? null)
+  up.input('bucket', sql.NVarChar(200), r.VBucketS3 ?? null)
+  up.input('sha', sql.VarChar(256), r.VHash ?? null)
+  const sizeNum = r.VTamano == null ? null : Number(r.VTamano)
+  up.input('sz', sql.BigInt, Number.isFinite(sizeNum) ? sizeNum : null)
+  await up.query(`
+    UPDATE Archivos
+    SET IdVersionActual=@versionId,
+        StorageKey=ISNULL(NULLIF(@key,''), StorageKey),
+        S3Bucket=ISNULL(NULLIF(@bucket,''), S3Bucket),
+        ChecksumSHA256=ISNULL(NULLIF(@sha,''), ChecksumSHA256),
+        Tamano=ISNULL(@sz, Tamano),
+        FechaActualizacion=GETDATE()
+    WHERE Id=@fileId;
+  `)
+  const g2 = pool.request()
+  g2.input('id', sql.UniqueIdentifier, fileId)
+  const after = await g2.query(`
+    SELECT a.*, u.NombreCompleto AS OwnerNombre, u.Correo AS OwnerCorreo,
+      ca.NumeroVersion AS CurrentVersionNumber, vc.Cnt AS VersionCount
+    FROM Archivos a LEFT JOIN Usuarios u ON u.Id = a.IdPropietario
+    LEFT JOIN VersionesArchivo ca ON ca.Id = a.IdVersionActual
+    OUTER APPLY (SELECT COUNT(*) AS Cnt FROM VersionesArchivo v WHERE v.IdArchivo = a.Id) vc
+    WHERE a.Id=@id
+  `)
+  const storage = getStorageProvider()
+  const finalRow = after.recordset[0]
+  const key = finalRow.StorageKey || buildStorageKey(finalRow)
+  const downloadUrl = await storage.getPresignedDownloadUrl(key)
+  logAuditRecord({
+    organizationId: auth.organizationId,
+    userId: auth.userId,
+    action: 'file.version.establecida_actual',
+    resourceType: 'file',
+    resourceId: fileId,
+    resourceName: String(finalRow.Nombre),
+    extra: { versionId },
+    req: opts?.req ?? null,
+  })
+  return mapArchivo(finalRow, downloadUrl)
+}
+
+export async function deleteFileVersion(
+  auth: { organizationId: string; userId: string },
+  fileId: string,
+  versionId: string,
+  opts?: { req?: Request | null }
+): Promise<void> {
+  const pool = await getDbPool()
+  const g = pool.request()
+  g.input('fileId', sql.UniqueIdentifier, fileId)
+  g.input('versionId', sql.UniqueIdentifier, versionId)
+  const row = await g.query(`
+    SELECT a.*,
+      v.Id AS VId,
+      v.NumeroVersion AS VNumeroVersion,
+      v.IdCargador AS VIdCargador
+    FROM Archivos a LEFT JOIN VersionesArchivo v ON v.Id=@versionId
+    WHERE a.Id=@fileId
+  `)
+  if (!row.recordset.length) throw new NotFoundError('Archivo o versión no encontrados')
+  const r = row.recordset[0]
+  if (!r.VId) throw new NotFoundError('Versión no encontrada')
+  await ensureProjectAccess(pool, auth, String(r.IdProyecto))
+  const projQ = pool.request()
+  projQ.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+  projQ.input('userId', sql.UniqueIdentifier, auth.userId)
+  projQ.input('pid', sql.UniqueIdentifier, String(r.IdProyecto))
+  const projR = await projQ.query<{ ProjectOwner: string }>(`
+    SELECT p.IdPropietario AS ProjectOwner FROM Proyectos p
+    WHERE p.Id = @pid AND p.IdOrganizacion = @orgId AND p.Estado <> 'ELIMINADO'
+      AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id AND mp.IdUsuario=@userId));
+  `)
+  if (!projR.recordset[0]) throw new ForbiddenError('No tienes acceso a este proyecto')
+  const isFileOwner = String(r.IdPropietario).toLowerCase() === String(auth.userId).toLowerCase()
+  const isProjectOwner = String(projR.recordset[0].ProjectOwner).toLowerCase() === String(auth.userId).toLowerCase()
+  if (!isFileOwner && !isProjectOwner) throw new ForbiddenError('Solo el propietario puede eliminar una versión')
+  const isVersionLoader = r.VIdCargador && String(r.VIdCargador).toLowerCase() === String(auth.userId).toLowerCase()
+  if (!isFileOwner && !isProjectOwner && !isVersionLoader) {
+    throw new ForbiddenError('Solo propietarios pueden eliminar una versión histórica')
+  }
+  const isCurrent = String(r.IdVersionActual || '').toLowerCase() === String(versionId).toLowerCase()
+  try {
+    if (isCurrent) {
+      const unlink = pool.request()
+      unlink.input('fileId', sql.UniqueIdentifier, fileId)
+      await unlink.query('UPDATE Archivos SET IdVersionActual = NULL WHERE Id=@fileId;')
+    }
+    const del = pool.request()
+    del.input('versionId', sql.UniqueIdentifier, versionId)
+    del.input('fileId', sql.UniqueIdentifier, fileId)
+    await del.query('DELETE FROM VersionesArchivo WHERE Id=@versionId AND IdArchivo=@fileId;')
+    logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'file.version.eliminada',
+      resourceType: 'file',
+      resourceId: fileId,
+      resourceName: String(r.Nombre),
+      extra: { versionId, versionNumber: Number(r.VNumeroVersion), wasCurrent: isCurrent },
+      req: opts?.req ?? null,
+    })
+  } catch (e: any) {
+    if (e?.message && /FOREIGN KEY.*FK_Archivo_VersionActual/i.test(e.message)) {
+      throw new AppError('No se puede eliminar esta versión: hay archivos que la referencian como actual.', 409)
+    }
+    throw e
+  }
 }
 
 export function verifyLocalDownloadSignature(req: Request): { ok: boolean; key?: string } {

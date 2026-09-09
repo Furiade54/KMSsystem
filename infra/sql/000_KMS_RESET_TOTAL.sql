@@ -1,7 +1,7 @@
 -- ============================================================================
 --  KMS - Knowledge Management System
 --  Script TOTAL de recreacion de base de datos (DROP + CREATE + schema + seed)
---  VERSION UNIFICADA v3.1 PRODUCCION — incorpora todas las mejoras de:
+--  VERSION UNIFICADA v3.3 PRODUCCION — incorpora todas las mejoras de:
 --    * Mejoras usuarios / RBAC / trazabilidad (antiguo 002_KMS_MEJORAS_USUARIOS_SBD)
 --    * Favoritos con IdOrganizacion y PK compuesta
 --    * Tablas ActividadReciente y SolicitudesPendientes
@@ -9,6 +9,11 @@
 --      (incluye recursos.permisos.ver y recursos.permisos.editar)
 --    * Tabla PermisosRecurso con 14 cols (FechaCreacion / FechaActualizacion
 --      / IdConcedidoPor) + 1 IX compuesto + 2 UQ filtrados (grantee XOR)
+--    * Changelog Temas vinculados Reuniones (v3.2): FK_ReunionesTema/TemaItem +
+--      FK_TemaItem_Reunion + UQ_TemasProyecto_Titulo + CK_Estado + IXs
+--    * Changelog VersionesArchivo (v3.3): FK_Archivo_VersionActual
+--      (ON DELETE NO ACTION, evita ciclo #1785 MSSQL) + 3 CK: NumeroVersion>=1,
+--      Tamano>=0, BucketS3 coherente con ClaveS3.
 --  Destino: Microsoft SQL Server 2014 (COMPATIBILITY_LEVEL 120) — listo para PROD.
 --
 --  ⚠  ADVERTENCIA PARA PRODUCCION (LEER ANTES):
@@ -32,6 +37,7 @@
 --    2) 20260903b_patch_permisos_miembro.sql
 --    3) 20260903c_add_fechaactualizacion.sql
 --    4) 20260905_permisos_recurso.sql   ← ACL granular por recurso
+--    5) 20260908_versionesarchivo_fk_ck.sql  ← FK_Archivo_VersionActual + 3 CK
 --
 --  IMPORTANTE (CASCADE PATHS):
 --    - FK_Archivo_Proyecto NO usa ON DELETE CASCADE a proposito.
@@ -550,7 +556,9 @@ CREATE TABLE dbo.Archivos (
     CONSTRAINT FK_Archivo_Proyecto
         FOREIGN KEY (IdProyecto) REFERENCES dbo.Proyectos(Id),
     CONSTRAINT FK_Archivo_Propietario
-        FOREIGN KEY (IdPropietario) REFERENCES dbo.Usuarios(Id)
+        FOREIGN KEY (IdPropietario) REFERENCES dbo.Usuarios(Id),
+    CONSTRAINT FK_Archivo_VersionActual
+        FOREIGN KEY (IdVersionActual) REFERENCES dbo.VersionesArchivo(Id) ON DELETE NO ACTION ON UPDATE NO ACTION
 );
 GO
 
@@ -598,7 +606,10 @@ CREATE TABLE dbo.VersionesArchivo (
         FOREIGN KEY (IdArchivo) REFERENCES dbo.Archivos(Id) ON DELETE CASCADE,
     CONSTRAINT FK_Version_Cargador
         FOREIGN KEY (IdCargador) REFERENCES dbo.Usuarios(Id),
-    CONSTRAINT UQ_VersionArchivo UNIQUE (IdArchivo, NumeroVersion)
+    CONSTRAINT UQ_VersionArchivo UNIQUE (IdArchivo, NumeroVersion),
+    CONSTRAINT CK_VerArchivo_NumeroVersionPositivo CHECK (NumeroVersion >= 1),
+    CONSTRAINT CK_VerArchivo_TamanoNoNegativo CHECK (Tamano IS NULL OR Tamano >= 0),
+    CONSTRAINT CK_VerArchivo_Bucket_SiClave CHECK ((ClaveS3 IS NULL AND BucketS3 IS NULL) OR BucketS3 IS NOT NULL)
 );
 GO
 
