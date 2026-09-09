@@ -32,6 +32,7 @@ function normalizeResourceType(type: ResourceTypeApi | ResourceTypeDb | string):
   if (t === 'PROJECT' || t === 'proyecto') return 'PROJECT'
   if (t === 'FOLDER' || t === 'carpeta') return 'FOLDER'
   if (t === 'FILE' || t === 'archivo') return 'FILE'
+  if (t === 'APORTE' || t === 'aporte') return 'APORTE'
   throw new BadRequestError(`Tipo de recurso inválido: ${type}`)
 }
 
@@ -43,32 +44,37 @@ const PERMISSION_CODE_FOR_VER: Record<ResourceTypeApi, string[]> = {
   PROJECT: ['proyectos.ver'],
   FOLDER: ['proyectos.ver', 'archivos.ver'],
   FILE: ['archivos.ver'],
+  APORTE: ['aportes.ver'],
 }
 const PERMISSION_CODE_FOR_EDIT: Record<ResourceTypeApi, string[]> = {
   PROJECT: ['proyectos.editar'],
   FOLDER: ['archivos.editar', 'archivos.subir'],
   FILE: ['archivos.editar', 'archivos.subir'],
+  APORTE: ['aportes.editar'],
 }
 const CAPABILITY_TO_GENERAL_PERMISSION: Partial<
   Record<ResourceCapability, Partial<Record<ResourceTypeApi, string[]>>>
 > = {
   VER: PERMISSION_CODE_FOR_VER as any,
-  DESCARGAR: { FILE: ['archivos.ver'], FOLDER: ['archivos.ver'], PROJECT: ['proyectos.ver'] },
+  DESCARGAR: { FILE: ['archivos.ver'], FOLDER: ['archivos.ver'], PROJECT: ['proyectos.ver'], APORTE: ['aportes.ver'] },
   COMENTAR: {
     FILE: ['comentarios.crear', 'comentarios.gestionar', 'archivos.ver'],
     FOLDER: ['comentarios.crear', 'comentarios.gestionar', 'archivos.ver'],
     PROJECT: ['comentarios.crear', 'comentarios.gestionar', 'proyectos.ver'],
+    APORTE: ['comentarios.crear', 'comentarios.gestionar', 'aportes.ver'],
   },
   EDITAR: PERMISSION_CODE_FOR_EDIT as any,
   COMPARTIR: {
     FILE: ['archivos.compartir', 'archivos.editar'],
     FOLDER: ['archivos.compartir', 'archivos.editar'],
     PROJECT: ['proyectos.miembros.gestionar'],
+    APORTE: ['aportes.compartir', 'aportes.editar'],
   },
   ADMINISTRAR: {
     FILE: ['archivos.eliminar', 'archivos.editar'],
     FOLDER: ['archivos.eliminar', 'archivos.editar'],
     PROJECT: ['proyectos.eliminar', 'proyectos.editar'],
+    APORTE: ['aportes.eliminar', 'aportes.editar'],
   },
 }
 
@@ -79,6 +85,7 @@ const RESOURCE_TABLE: Record<
   PROJECT: { table: 'Proyectos', id: 'Id', orgId: 'IdOrganizacion', ownerId: 'IdPropietario', name: 'Nombre' },
   FOLDER: { table: 'Carpetas', id: 'Id', orgId: 'IdOrganizacion', ownerId: 'IdPropietario', projectId: 'IdProyecto', name: 'Nombre' },
   FILE: { table: 'Archivos', id: 'Id', orgId: 'IdOrganizacion', ownerId: 'IdPropietario', projectId: 'IdProyecto', name: 'Nombre' },
+  APORTE: { table: 'AportesProyecto', id: 'Id', orgId: 'IdOrganizacion', ownerId: 'IdAutor', projectId: 'IdProyecto', name: 'Titulo' },
 }
 
 export async function fetchResourceMeta(

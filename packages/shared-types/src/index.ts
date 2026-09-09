@@ -120,19 +120,21 @@ export type ResourceCapability =
   | 'COMPARTIR'
   | 'ADMINISTRAR'
 
-export type ResourceTypeDb = 'proyecto' | 'carpeta' | 'archivo'
-export type ResourceTypeApi = 'PROJECT' | 'FOLDER' | 'FILE'
+export type ResourceTypeDb = 'proyecto' | 'carpeta' | 'archivo' | 'aporte'
+export type ResourceTypeApi = 'PROJECT' | 'FOLDER' | 'FILE' | 'APORTE'
 
 export const RESOURCE_TYPE_DB_TO_API: Record<ResourceTypeDb, ResourceTypeApi> = {
   proyecto: 'PROJECT',
   carpeta: 'FOLDER',
   archivo: 'FILE',
+  aporte: 'APORTE',
 }
 
 export const RESOURCE_TYPE_API_TO_DB: Record<ResourceTypeApi, ResourceTypeDb> = {
   PROJECT: 'proyecto',
   FOLDER: 'carpeta',
   FILE: 'archivo',
+  APORTE: 'aporte',
 }
 
 export const RESOURCE_CAPABILITY_TO_COLUMN: Record<ResourceCapability, string> = {
@@ -232,6 +234,11 @@ export type PermissionCode =
   | 'revisiones.ver'
   | 'recursos.permisos.ver'
   | 'recursos.permisos.editar'
+  | 'aportes.ver'
+  | 'aportes.crear'
+  | 'aportes.editar'
+  | 'aportes.eliminar'
+  | 'aportes.compartir'
 
 export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
   'org.ver',
@@ -266,6 +273,11 @@ export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionC
   'revisiones.ver',
   'recursos.permisos.ver',
   'recursos.permisos.editar',
+  'aportes.ver',
+  'aportes.crear',
+  'aportes.editar',
+  'aportes.eliminar',
+  'aportes.compartir',
 ])
 
 // --- Trabajo colaborativo ---
@@ -473,6 +485,74 @@ export interface FileVersion {
   comment?: string | null
   size?: number | null
   createdAt: string
+}
+
+export type ProjectContributionType =
+  | 'IDEA'
+  | 'COMENTARIO'
+  | 'ENLACE'
+  | 'ARCHIVO'
+  | 'IMAGEN'
+  | 'ENCUESTA'
+  | 'MENSAJE'
+  | 'OTRO'
+
+export type ProjectContributionStatus =
+  | 'BORRADOR'
+  | 'PUBLICADO'
+  | 'OCULTO'
+  | 'ELIMINADO'
+  | 'DESTACADO'
+
+export type ProjectContributionPriority =
+  | 'BAJA'
+  | 'NORMAL'
+  | 'ALTA'
+  | 'URGENTE'
+
+export interface ProjectContribution {
+  id: string
+  organizationId: string
+  projectId: string
+  authorId?: string | null
+  authorName?: string | null
+  authorEmail?: string | null
+  title?: string | null
+  content?: string | null
+  type: ProjectContributionType
+  externalUrl?: string | null
+  folderId?: string | null
+  attachedFileId?: string | null
+  attachedFileName?: string | null
+  attachedFileSizeBytes?: number | null
+  attachedFileMimeType?: string | null
+  status: ProjectContributionStatus
+  priority: ProjectContributionPriority
+  order: number
+  likesCount: number
+  commentsCount: number
+  createdAt: string
+  updatedAt?: string | null
+  publishedAt?: string | null
+  linkedTopics?: Array<{
+    id: string
+    title: string
+    linkedAt: string
+    linkedBy?: string | null
+  }>
+  _permissions?: {
+    canEdit: boolean
+    canDelete: boolean
+    canShare: boolean
+  }
+}
+
+export interface ProjectContributionTopicLink {
+  contributionId: string
+  topicId: string
+  topicTitle?: string | null
+  linkedByUserId?: string | null
+  linkedAt: string
 }
 
 export interface ExternalResource {

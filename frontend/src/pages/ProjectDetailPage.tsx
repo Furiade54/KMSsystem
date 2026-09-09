@@ -55,8 +55,28 @@ import {
 } from '../components/project/ProjectExtraModals'
 import ConfirmReplaceActaModal from '../components/project/ConfirmReplaceActaModal'
 import ProjectTopicsTab from '../components/project/ProjectTopicsTab'
+import ProjectAportesTab from '../components/project/ProjectAportesTab'
 import { useTopicForms } from '../components/project/project-topics/useTopicForms'
 import { useTopicItemForms } from '../components/project/project-topics/useTopicItemForms'
+import { useAporteForms } from '../components/project/project-aportes/useAporteForms'
+import type {
+  ApiContributionPriority,
+  ApiContributionStatus,
+  ApiContributionType,
+  ApiProjectContribution,
+  CreateContributionPayload,
+  UpdateContributionPayload,
+} from '../services/aportes.service'
+import {
+  aportesQueryKeys,
+  createContribution as apiCreateContribution,
+  deleteContribution as apiDeleteContribution,
+  fetchContributions as apiFetchContributions,
+  fetchLinkedTopics as apiFetchLinkedTopics,
+  linkTopic as apiLinkAporteTopic,
+  unlinkTopic as apiUnlinkAporteTopic,
+  updateContribution as apiUpdateContribution,
+} from '../services/aportes.service'
 import {
   ApiProjectStatus,
   deleteProject,
@@ -243,6 +263,14 @@ function ProjectDetailPage() {
   const [topicsSearch, setTopicsSearch] = useState('')
   const [topicsStatusFilter, setTopicsStatusFilter] = useState<ApiTopicStatus | ''>('')
   const topicForms = useTopicForms()
+
+  const [aporteSearch, setAporteSearch] = useState('')
+  const [aporteTipoFilter, setAporteTipoFilter] = useState<ApiContributionType | ''>('')
+  const [aporteEstadoFilter, setAporteEstadoFilter] = useState<ApiContributionStatus | ''>('')
+  const [aporteImportanciaFilter, setAporteImportanciaFilter] = useState<ApiContributionPriority | ''>('')
+  const [aporteOffset, setAporteOffset] = useState(0)
+  const aporteLimit = 20
+  const aporteForms = useAporteForms()
 
   const topicItemsPage = 1
   const topicItemsPageSize = 200
@@ -520,6 +548,39 @@ function ProjectDetailPage() {
     retry: 1,
   })
 
+  const aportesQuery = useQuery({
+    queryKey: aportesQueryKeys.list(projectId, {
+      tipo: aporteTipoFilter || undefined,
+      estado: aporteEstadoFilter || undefined,
+      importancia: aporteImportanciaFilter || undefined,
+      search: aporteSearch.trim() || undefined,
+      limit: aporteLimit,
+      offset: aporteOffset,
+    }),
+    queryFn: () =>
+      apiFetchContributions({
+        projectId,
+        tipo: aporteTipoFilter || null,
+        estado: aporteEstadoFilter || null,
+        importancia: aporteImportanciaFilter || null,
+        search: aporteSearch.trim() || null,
+        limit: aporteLimit,
+        offset: aporteOffset,
+      }),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  const aporteLinkedTopicsQuery = useQuery({
+    queryKey: aportesQueryKeys.linkedTopics(projectId, aporteForms.state.showLinkTopicModal?.aporteId ?? ''),
+    queryFn: () =>
+      apiFetchLinkedTopics(projectId, aporteForms.state.showLinkTopicModal?.aporteId as string),
+    enabled: Boolean(projectId) && Boolean(aporteForms.state.showLinkTopicModal?.aporteId),
+    staleTime: 15_000,
+    retry: 1,
+  })
+
   const detailIsLoading = projectQuery.isLoading && projectQuery.fetchStatus !== 'idle'
   const detailIs404 = projectQuery.isError && (projectQuery.error as any)?.message?.toLowerCase().includes('no encontrado')
   const redirectNoProject = !projectId
@@ -532,6 +593,7 @@ function ProjectDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
+    queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
     if (expandedMeetingId) {
       queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'participants', projectId, expandedMeetingId] })
     }
@@ -634,6 +696,24 @@ function ProjectDetailPage() {
   }, [project, authUser])
 
   const canDeleteTopics = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const canCreateAportes = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const canEditAportes = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
+  }, [project, authUser])
+
+  const canDeleteAportes = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
     return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
@@ -920,6 +1000,159 @@ function ProjectDetailPage() {
       })
     },
   })
+
+  const createContributionMutation = useMutation({
+    mutationFn: (payload: CreateContributionPayload) => apiCreateContribution(projectId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
+      invalidateDetail()
+      aporteForms.closeAporteForm()
+      setPageToast({ kind: 'success', title: 'Aporte creado', message: 'El aporte se registró correctamente en el proyecto.' })
+    },
+    onError: (err: unknown) => {
+      aporteForms.state.formNew.setError(err instanceof Error ? err.message : 'Error desconocido')
+    },
+  })
+
+  const updateContributionMutation = useMutation({
+    mutationFn: (payload: { aporteId: string; patch: UpdateContributionPayload }) =>
+      apiUpdateContribution(projectId, payload.aporteId, payload.patch),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.detail(projectId, vars.aporteId) })
+      invalidateDetail()
+      aporteForms.closeAporteForm()
+      setPageToast({ kind: 'success', title: 'Aporte actualizado', message: 'Se guardaron los cambios del aporte.' })
+    },
+    onError: (err: unknown) => {
+      aporteForms.state.formEdit.setError(err instanceof Error ? err.message : 'Error desconocido')
+    },
+  })
+
+  const deleteContributionMutation = useMutation({
+    mutationFn: (contributionId: string) => apiDeleteContribution(projectId, contributionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
+      invalidateDetail()
+      aporteForms.state.setConfirmDeleteAporte(null)
+      setPageToast({ kind: 'success', title: 'Aporte eliminado', message: 'El aporte se retiró del proyecto.' })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo eliminar el aporte',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const linkAporteTopicMutation = useMutation({
+    mutationFn: (payload: { aporteId: string; topicId: string }) =>
+      apiLinkAporteTopic(projectId, payload.aporteId, payload.topicId),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.linkedTopics(projectId, vars.aporteId) })
+      invalidateDetail()
+      setPageToast({ kind: 'success', title: 'Tema vinculado', message: 'El tema se vinculó al aporte correctamente.' })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo vincular el tema',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido.',
+      })
+    },
+  })
+
+  const unlinkAporteTopicMutation = useMutation({
+    mutationFn: (payload: { aporteId: string; topicId: string }) =>
+      apiUnlinkAporteTopic(projectId, payload.aporteId, payload.topicId),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
+      queryClient.invalidateQueries({ queryKey: aportesQueryKeys.linkedTopics(projectId, vars.aporteId) })
+      invalidateDetail()
+      setPageToast({ kind: 'success', title: 'Tema desvinculado', message: 'El tema se retiró del aporte.' })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo desvincular el tema',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido.',
+      })
+    },
+  })
+
+  const openNewAporte = () => aporteForms.openNewAporte()
+  const openEditAporte = (a: ApiProjectContribution) => aporteForms.openEditAporte(a)
+
+  const handleSubmitAporte = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (aporteForms.state.editingAporte) {
+      const payload = aporteForms.buildUpdatePayload()
+      if (payload) updateContributionMutation.mutate(payload)
+    } else {
+      const payload = aporteForms.buildCreatePayload()
+      if (payload) createContributionMutation.mutate(payload)
+    }
+  }
+
+  const onConfirmDeleteAporte = () => {
+    if (aporteForms.state.confirmDeleteAporte) {
+      deleteContributionMutation.mutate(aporteForms.state.confirmDeleteAporte.id)
+    }
+  }
+
+  const onSubmitLinkTopic = (topicId: string) => {
+    if (aporteForms.state.showLinkTopicModal?.aporteId) {
+      linkAporteTopicMutation.mutate({ aporteId: aporteForms.state.showLinkTopicModal.aporteId, topicId })
+    }
+  }
+
+  const onUnlinkTopic = (aporteId: string, topicId: string) => {
+    unlinkAporteTopicMutation.mutate({ aporteId, topicId })
+  }
+
+  const onSelectAttachedFile = async (file: File) => {
+    const editing = !!aporteForms.state.editingAporte
+    const form = editing ? aporteForms.state.formEdit : aporteForms.state.formNew
+    if (form.uploading) return
+    form.setUploading(true)
+    form.setUploadPercent(0)
+    form.setError('')
+    try {
+      const uploaded = await uploadFile({
+        projectId,
+        folderId: form.folderId ?? undefined,
+        file,
+        onProgress: (percent) => form.setUploadPercent(percent),
+      })
+      form.setAttachedFileId(uploaded.id)
+      form.setAttachedFileMeta({
+        id: uploaded.id,
+        name: uploaded.name,
+        sizeBytes: uploaded.sizeBytes,
+        mimeType: uploaded.mimeType,
+      })
+      form.setUploadPercent(100)
+    } catch (err: any) {
+      form.setAttachedFileId(null)
+      form.setAttachedFileMeta(null)
+      form.setUploadPercent(0)
+      form.setError(err?.response?.data?.message || err?.message || 'No se pudo subir el archivo adjunto')
+    } finally {
+      form.setUploading(false)
+    }
+  }
+
+  const onClearAttachedFile = () => {
+    const editing = !!aporteForms.state.editingAporte
+    const form = editing ? aporteForms.state.formEdit : aporteForms.state.formNew
+    form.setAttachedFileId(null)
+    form.setAttachedFileMeta(null)
+    form.setUploadPercent(0)
+    form.setUploading(false)
+    form.setError('')
+  }
 
   const createTopicItemMutation = useMutation({
     mutationFn: (payload: CreateTopicItemPayload & { topicId: string }) =>
@@ -1953,7 +2186,66 @@ function ProjectDetailPage() {
         />
       )}
 
-      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && activeTab !== 'topics' && (
+      {activeTab === 'contributions' && (
+        <ProjectAportesTab
+          filters={{
+            search: aporteSearch,
+            setSearch: setAporteSearch,
+            tipoFilter: aporteTipoFilter,
+            setTipoFilter: setAporteTipoFilter,
+            estadoFilter: aporteEstadoFilter,
+            setEstadoFilter: setAporteEstadoFilter,
+            importanciaFilter: aporteImportanciaFilter,
+            setImportanciaFilter: setAporteImportanciaFilter,
+            offset: aporteOffset,
+            setOffset: setAporteOffset,
+            limit: aporteLimit,
+          }}
+          listUi={{
+            items: aportesQuery.data?.items,
+            total: aportesQuery.data?.meta.total,
+            limit: aporteLimit,
+            offset: aporteOffset,
+            loading: aportesQuery.isLoading,
+            isError: aportesQuery.isError,
+          }}
+          forms={aporteForms.state}
+          pending={{
+            createPending: createContributionMutation.isPending,
+            updatePending: updateContributionMutation.isPending,
+            deletePending: deleteContributionMutation.isPending,
+            linkTopicPending: linkAporteTopicMutation.isPending,
+            unlinkTopicPending: unlinkAporteTopicMutation.isPending,
+          }}
+          callbacks={{
+            onNewAporte: openNewAporte,
+            onEditAporte: openEditAporte,
+            onSubmitAporte: handleSubmitAporte,
+            onConfirmDeleteAporte,
+            onOpenLinkTopic: (a) => aporteForms.openLinkTopic(a),
+            onSubmitLinkTopic,
+            onUnlinkTopic,
+            onSelectAttachedFile,
+            onClearAttachedFile,
+          }}
+          linkTopicUi={{
+            availableTopicsLoading: topicsQuery.isLoading,
+            availableTopicsIsError: topicsQuery.isError,
+            availableTopics: (topicsQuery.data?.items ?? []).map((t) => ({
+              ...t,
+              alreadyLinked: (aporteLinkedTopicsQuery.data ?? []).some((l) => l.topicId === t.id),
+            })),
+            linkedTopics: aporteLinkedTopicsQuery.data,
+            linkedTopicsLoading: aporteLinkedTopicsQuery.isLoading,
+          }}
+          canCreateAportes={canCreateAportes}
+          canEditAportes={canEditAportes}
+          canDeleteAportes={canDeleteAportes}
+          formatRelativeTime={formatRelativeTime}
+        />
+      )}
+
+      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && activeTab !== 'topics' && activeTab !== 'contributions' && (
         <div className="flex-1 flex items-center justify-center text-center p-8 overflow-y-auto">
           <div className="text-muted-foreground">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-surface-secondary flex items-center justify-center mb-4">

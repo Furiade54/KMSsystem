@@ -676,6 +676,128 @@ CREATE INDEX IX_ComentariosArchivos_IdUsuario
 GO
 
 -- ============================================================
+--  3.1 MODULO APORTES PROYECTO (tabla principal + puente M-N
+-- ============================================================
+
+CREATE TABLE dbo.AportesProyecto (
+    Id UNIQUEIDENTIFIER NOT NULL
+        CONSTRAINT PK_AportesProyecto PRIMARY KEY DEFAULT NEWID(),
+    IdOrganizacion UNIQUEIDENTIFIER NOT NULL,
+    IdProyecto UNIQUEIDENTIFIER NOT NULL,
+    IdAutor UNIQUEIDENTIFIER NULL,
+    Titulo NVARCHAR(255) NULL,
+    Contenido NVARCHAR(MAX) NULL,
+    Tipo VARCHAR(30) NOT NULL
+        CONSTRAINT DF_Aportes_Tipo DEFAULT 'IDEA',
+    UrlExterno NVARCHAR(500) NULL,
+    IdCarpeta UNIQUEIDENTIFIER NULL,
+    IdArchivoAdjunto UNIQUEIDENTIFIER NULL,
+    Estado VARCHAR(30) NOT NULL
+        CONSTRAINT DF_Aportes_Estado DEFAULT 'PUBLICADO',
+    Importancia VARCHAR(20) NOT NULL
+        CONSTRAINT DF_Aportes_Importancia DEFAULT 'NORMAL',
+    Orden INT NOT NULL
+        CONSTRAINT DF_Aportes_Orden DEFAULT 0,
+    MeGustaCount INT NOT NULL
+        CONSTRAINT DF_Aportes_MeGusta DEFAULT 0,
+    ComentariosCount INT NOT NULL
+        CONSTRAINT DF_Aportes_ComentariosCount DEFAULT 0,
+    FechaCreacion DATETIME2 NOT NULL
+        CONSTRAINT DF_Aportes_FechaCreacion DEFAULT GETDATE(),
+    FechaActualizacion DATETIME2 NULL,
+    FechaPublicacion DATETIME2 NULL,
+
+    CONSTRAINT FK_Aportes_Organizacion
+        FOREIGN KEY (IdOrganizacion) REFERENCES dbo.Organizaciones(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_Aportes_Proyecto
+        FOREIGN KEY (IdProyecto) REFERENCES dbo.Proyectos(Id) ON DELETE CASCADE,
+    CONSTRAINT FK_Aportes_Autor
+        FOREIGN KEY (IdAutor) REFERENCES dbo.Usuarios(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_Aportes_Carpeta
+        FOREIGN KEY (IdCarpeta) REFERENCES dbo.Carpetas(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_Aportes_ArchivoAdjunto
+        FOREIGN KEY (IdArchivoAdjunto) REFERENCES dbo.Archivos(Id) ON DELETE NO ACTION,
+
+    CONSTRAINT CK_Aportes_TituloOContenido
+        CHECK (Titulo IS NOT NULL OR Contenido IS NOT NULL),
+    CONSTRAINT CK_Aportes_Tipo
+        CHECK (Tipo IN ('IDEA','COMENTARIO','ENLACE','ARCHIVO','IMAGEN','ENCUESTA','MENSAJE','OTRO')),
+    CONSTRAINT CK_Aportes_Estado
+        CHECK (Estado IN ('BORRADOR','PUBLICADO','OCULTO','ELIMINADO','DESTACADO')),
+    CONSTRAINT CK_Aportes_Importancia
+        CHECK (Importancia IN ('BAJA','NORMAL','ALTA','URGENTE')),
+    CONSTRAINT CK_Aportes_UrlSiEnlace
+        CHECK (Tipo <> 'ENLACE' OR UrlExterno IS NOT NULL),
+    CONSTRAINT CK_Aportes_ArchivoSiTipoArchivo
+        CHECK (Tipo <> 'ARCHIVO' OR IdArchivoAdjunto IS NOT NULL OR Contenido IS NOT NULL),
+    CONSTRAINT CK_Aportes_MeGustaCountNoNegativo
+        CHECK (MeGustaCount >= 0),
+    CONSTRAINT CK_Aportes_ComentariosCountNoNegativo
+        CHECK (ComentariosCount >= 0)
+);
+GO
+
+CREATE INDEX IX_Aportes_IdOrganizacion_Estado
+    ON dbo.AportesProyecto(IdOrganizacion, Estado)
+    INCLUDE (IdProyecto, Tipo, FechaCreacion);
+GO
+
+CREATE INDEX IX_Aportes_IdProyecto_FechaCreacion
+    ON dbo.AportesProyecto(IdProyecto, FechaCreacion DESC)
+    INCLUDE (IdOrganizacion, IdAutor, Tipo, Estado, Orden);
+GO
+
+CREATE INDEX IX_Aportes_IdAutor
+    ON dbo.AportesProyecto(IdAutor, Estado)
+    INCLUDE (IdProyecto, Tipo, FechaCreacion);
+GO
+
+CREATE INDEX IX_Aportes_IdCarpeta
+    ON dbo.AportesProyecto(IdCarpeta)
+    INCLUDE (IdProyecto, Tipo, Estado, Orden);
+GO
+
+CREATE INDEX IX_Aportes_IdArchivoAdjunto
+    ON dbo.AportesProyecto(IdArchivoAdjunto)
+    INCLUDE (IdProyecto, Estado);
+GO
+
+CREATE TABLE dbo.AportesTemasVinculados (
+    IdAporte            UNIQUEIDENTIFIER NOT NULL,
+    IdTema              UNIQUEIDENTIFIER NOT NULL,
+    IdUsuarioVinculante UNIQUEIDENTIFIER NULL,
+    FechaVinculacion    DATETIME2 NOT NULL
+        CONSTRAINT DF_ATV_FechaVinculacion DEFAULT GETDATE(),
+    CONSTRAINT PK_AportesTemasVinculados
+        PRIMARY KEY CLUSTERED (IdAporte, IdTema),
+    CONSTRAINT FK_ATV_Aporte
+        FOREIGN KEY (IdAporte) REFERENCES dbo.AportesProyecto(Id) ON DELETE CASCADE,
+    CONSTRAINT FK_ATV_Tema
+        FOREIGN KEY (IdTema) REFERENCES dbo.TemasProyecto(Id) ON DELETE NO ACTION,
+    CONSTRAINT FK_ATV_Vinculante
+        FOREIGN KEY (IdUsuarioVinculante) REFERENCES dbo.Usuarios(Id) ON DELETE NO ACTION
+);
+GO
+
+CREATE NONCLUSTERED INDEX IX_ATV_IdTema
+    ON dbo.AportesTemasVinculados(IdTema, IdAporte);
+GO
+
+CREATE NONCLUSTERED INDEX IX_ATV_IdUsuarioVinculante
+    ON dbo.AportesTemasVinculados(IdUsuarioVinculante, IdAporte, IdTema);
+GO
+
+-- IMPORTANTE (MSSQL 2014):
+--   * FK_Aportes_Organizacion: ON DELETE NO_ACTION (evita multiple cascade path Organizaciones->Proyectos->Aportes vs Organizaciones->Aportes)
+--   * FK_Aportes_Carpeta y FK_Aportes_ArchivoAdjunto: ON DELETE NO_ACTION (evita multiple cascade path Proyectos->Carpetas + Proyectos->Aportes + SET NULL indirecto).
+--     La limpieza de IdCarpeta/IdArchivoAdjunto = NULL al borrar una Carpeta o Archivo se realiza MANUALMENTE EN LOS SERVICIOS.
+
+-- IMPORTANTE (MSSQL 2014): FK FK_ATV_Tema y FK_ATV_Vinculante son ON DELETE NO_ACTION
+-- para evitar ciclos con las CASCADE existentes de TemasProyecto -> Proyectos
+-- y AportesProyecto -> Proyectos. La limpieza de ATV al borrar un Tema o un Usuario
+-- se realiza MANUALMENTE EN LOS CONTROLADORES (manual cleanup).
+
+-- ============================================================
 --  4. ACCESO Y COMPARTICION
 -- ============================================================
 
@@ -1077,7 +1199,12 @@ VALUES
 ('auditoria.ver',                N'Ver los registros de auditoria de la organizacion',            'SISTEMA',      N'Auditoria'),
 ('solicitudes.gestionar',        N'Aprobar/rechazar solicitudes de acceso a recursos',             'ORGANIZACION', N'Solicitudes'),
 ('recursos.permisos.ver',        N'Ver el listado de permisos ACL de un recurso concreto',        'RECURSO',      N'PermisosRecurso'),
-('recursos.permisos.editar',     N'Crear, editar y revocar permisos ACL en recursos',             'RECURSO',      N'PermisosRecurso');
+('recursos.permisos.editar',     N'Crear, editar y revocar permisos ACL en recursos',             'RECURSO',      N'PermisosRecurso'),
+('aportes.crear',      N'Crear aportes e ideas dentro de proyectos colaborativos',                                     'RECURSO',      N'Aportes'),
+('aportes.ver',        N'Ver y leer los aportes y comentarios asociados del proyecto',                                 'RECURSO',      N'Aportes'),
+('aportes.editar',     N'Editar aportes propios (titulo, contenido, tipo, adjuntos, importancia)',                    'RECURSO',      N'Aportes'),
+('aportes.eliminar',   N'Eliminar aportes del proyecto o moverlos a papelera (requiere admin o propietario)',          'RECURSO',      N'Aportes'),
+('aportes.compartir',  N'Compartir aportes con usuarios fuera del proyecto via enlaces externos o ACL',                'RECURSO',      N'Aportes');
 GO
 
 -- =============================================================================
@@ -1090,14 +1217,14 @@ DECLARE @IdOrganizacion UNIQUEIDENTIFIER = '11111111-1111-1111-1111-111111111111
 DECLARE @IdRolAdmin     UNIQUEIDENTIFIER = '33333333-3333-3333-3333-333333333333';
 DECLARE @IdRolMiembro   UNIQUEIDENTIFIER = '44444444-4444-4444-4444-444444444444';
 
--- ADMINISTRADOR = TODOS LOS 28 PERMISOS
+-- ADMINISTRADOR = TODOS LOS 33 PERMISOS (28 originales + 5 modulo Aportes)
 INSERT INTO dbo.PermisosRol (IdRol, IdPermiso)
 SELECT @IdRolAdmin, p.Id FROM dbo.Permisos p
 WHERE NOT EXISTS (
   SELECT 1 FROM dbo.PermisosRol pr WHERE pr.IdRol = @IdRolAdmin AND pr.IdPermiso = p.Id
 );
 
--- MIEMBRO = 10 permisos de la matriz aprobada (incluye ver permisos de recursos)
+-- MIEMBRO = 13 permisos de la matriz aprobada (10 originales + 3 aportes basicos)
 INSERT INTO dbo.PermisosRol (IdRol, IdPermiso)
 SELECT @IdRolMiembro, p.Id FROM dbo.Permisos p
 WHERE p.Codigo IN (
@@ -1110,7 +1237,10 @@ WHERE p.Codigo IN (
     'archivos.editar',
     'comentarios.crear',
     'favoritos.gestionar',
-    'recursos.permisos.ver'
+    'recursos.permisos.ver',
+    'aportes.ver',
+    'aportes.crear',
+    'aportes.editar'
 )
 AND NOT EXISTS (
   SELECT 1 FROM dbo.PermisosRol pr WHERE pr.IdRol = @IdRolMiembro AND pr.IdPermiso = p.Id
@@ -1129,9 +1259,10 @@ GO
 PRINT '==============================================';
 PRINT 'KMS recreado correctamente.';
 PRINT 'Base de datos: KMS';
-PRINT 'VERSION: Unificada v3.1 PRODUCCION (incorpora 002 Mejoras Usuarios + Favoritos + ' +
+PRINT 'VERSION: Unificada v3.2 PRODUCCION (incorpora 002 Mejoras Usuarios + Favoritos + ' +
       'Tablas ActividadReciente / SolicitudesPendientes + RBAC por ' +
-      'codigo 28 permisos / PermisosRol / PermisosRecurso 14 cols + IX + UQ XOR)';
+      'codigo 33 permisos / PermisosRol / PermisosRecurso 14 cols + IX + UQ XOR + ' +
+      'MODULO APORTES PROYECTO (tabla AportesProyecto + puente ATV con Temas + 5 permisos RBAC Aportes))';
 PRINT '';
 PRINT 'Usuarios semilla (PRODUCCION: CAMBIA SUS PASSWORDS INMEDIATAMENTE):';
 PRINT '  1) Administrador  — admin@kms.local          / Admin123456 (Rol: Administrador)  NivelPrioridad 10 = isOrgAdmin';
