@@ -18,247 +18,197 @@ import {
 } from 'lucide-react'
 import type { ApiTopic, ApiTopicItem, ApiTopicItemStatus, ApiTopicStatus } from '@/services/project-topics.service'
 import { initials, topicItemStatusBadgeClass, topicItemStatusLabel, topicStatusBadgeClass, topicStatusLabel } from './fileHelpers'
+import type {
+  TopicCallbacks,
+  TopicFiltersState,
+  TopicFormsState,
+  TopicItemAvailableMember,
+  TopicItemFiltersState,
+  TopicItemFormsState,
+  TopicMemberMgmtState,
+  TopicMutationsPending,
+} from './project-topics/types'
 
 export type ProjectTopicsTabProps = {
-  topicsSearch: string
-  setTopicsSearch: (v: string) => void
-  topicsStatusFilter: ApiTopicStatus | ''
-  setTopicsStatusFilter: (v: ApiTopicStatus | '') => void
-  topicsPage: number
-  setTopicsPage: (v: number | ((p: number) => number)) => void
+  topicFilters: TopicFiltersState
+  topicUiState: {
+    topicsLoading: boolean
+    topicsFetchStatus: string
+    topicsIsError: boolean
+  }
+  topicPaginationData: {
+    topicsItems: ApiTopic[] | undefined
+    topicsTotal: number | undefined
+    topicsTotalPages: number | undefined
+    topicsCurrentPage: number | undefined
+  }
+  topicFormsState: TopicFormsState
+
+  topicItemFilters: TopicItemFiltersState
+  topicItemUiState: {
+    topicItemsLoading: boolean
+    topicItemsIsError: boolean
+  }
+  topicItemPaginationData: {
+    topicItemsItems: ApiTopicItem[] | undefined
+    topicItemsTotal: number | undefined
+  }
+  topicItemFormsState: TopicItemFormsState
+  topicMemberMgmtState: TopicMemberMgmtState
+
+  topicAvailableMembersUi: {
+    topicItemAvailableMembersLoading: boolean
+    topicItemAvailableMembersIsError: boolean
+    topicItemAvailableMembersItems: TopicItemAvailableMember[] | undefined
+  }
+
+  pending: TopicMutationsPending
+  callbacks: TopicCallbacks
 
   canEditTopics: boolean
   canDeleteTopics: boolean
-
-  topicsLoading: boolean
-  topicsFetchStatus: string
-  topicsIsError: boolean
-  topicsItems: ApiTopic[] | undefined
-  topicsTotal: number | undefined
-  topicsTotalPages: number | undefined
-  topicsCurrentPage: number | undefined
-
-  expandedTopicId: string | null
-  setExpandedTopicId: (v: string | null | ((p: string | null) => string | null)) => void
-
-  showNewTopic: boolean
-  setShowNewTopic: (v: boolean) => void
-  editingTopic: ApiTopic | null
-  newTopicTitle: string
-  newTopicDescription: string
-  newTopicOrder: number
-  newTopicStatus: ApiTopicStatus
-  newTopicError: string
-  setNewTopicTitle: (v: string) => void
-  setNewTopicDescription: (v: string) => void
-  setNewTopicOrder: (v: number) => void
-  setNewTopicStatus: (v: ApiTopicStatus) => void
-  editTopicTitle: string
-  editTopicDescription: string
-  editTopicOrder: number
-  editTopicStatus: ApiTopicStatus
-  editTopicError: string
-  setEditTopicTitle: (v: string) => void
-  setEditTopicDescription: (v: string) => void
-  setEditTopicOrder: (v: number) => void
-  setEditTopicStatus: (v: ApiTopicStatus) => void
-
-  confirmDeleteTopic: ApiTopic | null
-  setConfirmDeleteTopic: (m: ApiTopic | null) => void
-
-  createTopicPending: boolean
-  updateTopicPending: boolean
-  deleteTopicPending: boolean
-
-  onNewTopic: () => void
-  onEditTopic: (topic: ApiTopic) => void
-  onSubmitTopic: (e: React.FormEvent) => void
-  onConfirmDeleteTopic: () => void
-
-  formatRelativeTime: (iso: string | null | undefined) => string
-
   canAddTopicItems: boolean
   canEditTopicItems: boolean
   canDeleteTopicItems: boolean
   canAssignItemMembers: boolean
 
-  topicItemsSearch: string
-  setTopicItemsSearch: (v: string) => void
-  topicItemsStatusFilter: ApiTopicItemStatus | ''
-  setTopicItemsStatusFilter: (v: ApiTopicItemStatus | '') => void
-  topicItemsLoading: boolean
-  topicItemsIsError: boolean
-  topicItemsItems: ApiTopicItem[] | undefined
-  topicItemsTotal: number | undefined
-
-  showNewTopicItem: boolean
-  setShowNewTopicItem: (v: boolean) => void
-  editingTopicItem: ApiTopicItem | null
-  newTopicItemTitle: string
-  newTopicItemDescription: string
-  newTopicItemOrder: number
-  newTopicItemStatus: ApiTopicItemStatus
-  newTopicItemAssignedMembers: string[]
-  setNewTopicItemAssignedMembers: (v: string[]) => void
-  newTopicItemError: string
-  setNewTopicItemTitle: (v: string) => void
-  setNewTopicItemDescription: (v: string) => void
-  setNewTopicItemOrder: (v: number) => void
-  setNewTopicItemStatus: (v: ApiTopicItemStatus) => void
-  editTopicItemTitle: string
-  editTopicItemDescription: string
-  editTopicItemOrder: number
-  editTopicItemStatus: ApiTopicItemStatus
-  editTopicItemAssignedMembers: string[]
-  setEditTopicItemAssignedMembers: (v: string[]) => void
-  editTopicItemError: string
-  setEditTopicItemTitle: (v: string) => void
-  setEditTopicItemDescription: (v: string) => void
-  setEditTopicItemOrder: (v: number) => void
-  setEditTopicItemStatus: (v: ApiTopicItemStatus) => void
-
-  confirmDeleteTopicItem: ApiTopicItem | null
-  setConfirmDeleteTopicItem: (m: ApiTopicItem | null) => void
-
-  createTopicItemPending: boolean
-  updateTopicItemPending: boolean
-  deleteTopicItemPending: boolean
-
-  onNewTopicItem: () => void
-  onEditTopicItem: (item: ApiTopicItem) => void
-  onSubmitTopicItem: (e: React.FormEvent) => void
-  onConfirmDeleteTopicItem: () => void
-
-  managingMembersForItemId: string | null
-  setManagingMembersForItemId: (v: string | null) => void
-  manageMembersError: string
-  topicItemAvailableMembersLoading: boolean
-  topicItemAvailableMembersIsError: boolean
-  topicItemAvailableMembersItems:
-    | Array<{
-        projectMemberId: string
-        userId: string
-        userName?: string | null
-        roleName?: string | null
-        alreadyAssigned: boolean
-        assignmentId?: string | null
-      }>
-    | undefined
-  onOpenManageMembersForItem: (item: ApiTopicItem) => void
-  onAssignItemMember: (projectMemberId: string) => void
-  assignItemMemberPending: boolean
-  onUnassignItemMember: (assignmentId: string) => void
-  unassignItemMemberPending: boolean
+  formatRelativeTime: (iso: string | null | undefined) => string
 }
 
 export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
   const {
-    topicsSearch,
-    setTopicsSearch,
-    topicsStatusFilter,
-    setTopicsStatusFilter,
-    topicsPage,
-    setTopicsPage,
-    canEditTopics,
-    canDeleteTopics,
-    topicsLoading,
-    topicsFetchStatus,
-    topicsIsError,
-    topicsItems,
-    topicsTotal,
-    topicsTotalPages,
-    topicsCurrentPage,
-    expandedTopicId,
-    setExpandedTopicId,
-    showNewTopic,
-    setShowNewTopic,
-    editingTopic,
-    newTopicTitle,
-    newTopicDescription,
-    newTopicOrder,
-    newTopicStatus,
-    newTopicError,
-    setNewTopicTitle,
-    setNewTopicDescription,
-    setNewTopicOrder,
-    setNewTopicStatus,
-    editTopicTitle,
-    editTopicDescription,
-    editTopicOrder,
-    editTopicStatus,
-    editTopicError,
-    setEditTopicTitle,
-    setEditTopicDescription,
-    setEditTopicOrder,
-    setEditTopicStatus,
-    confirmDeleteTopic,
-    setConfirmDeleteTopic,
-    createTopicPending,
-    updateTopicPending,
-    deleteTopicPending,
-    onNewTopic,
-    onEditTopic,
-    onSubmitTopic,
-    onConfirmDeleteTopic,
-    formatRelativeTime,
-    canAddTopicItems,
-    canEditTopicItems,
-    canDeleteTopicItems,
-    canAssignItemMembers,
-    topicItemsSearch,
-    setTopicItemsSearch,
-    topicItemsStatusFilter,
-    setTopicItemsStatusFilter,
-    topicItemsLoading,
-    topicItemsIsError,
-    topicItemsItems,
-    topicItemsTotal,
-    showNewTopicItem,
-    setShowNewTopicItem,
-    editingTopicItem,
-    newTopicItemTitle,
-    newTopicItemDescription,
-    newTopicItemOrder,
-    newTopicItemStatus,
-    newTopicItemAssignedMembers,
-    setNewTopicItemAssignedMembers,
-    newTopicItemError,
-    setNewTopicItemTitle,
-    setNewTopicItemDescription,
-    setNewTopicItemOrder,
-    setNewTopicItemStatus,
-    editTopicItemTitle,
-    editTopicItemDescription,
-    editTopicItemOrder,
-    editTopicItemStatus,
-    editTopicItemAssignedMembers,
-    setEditTopicItemAssignedMembers,
-    editTopicItemError,
-    setEditTopicItemTitle,
-    setEditTopicItemDescription,
-    setEditTopicItemOrder,
-    setEditTopicItemStatus,
-    confirmDeleteTopicItem,
-    setConfirmDeleteTopicItem,
-    createTopicItemPending,
-    updateTopicItemPending,
-    deleteTopicItemPending,
-    onNewTopicItem,
-    onEditTopicItem,
-    onSubmitTopicItem,
-    onConfirmDeleteTopicItem,
-    managingMembersForItemId,
-    setManagingMembersForItemId,
-    manageMembersError,
-    topicItemAvailableMembersLoading,
-    topicItemAvailableMembersIsError,
-    topicItemAvailableMembersItems,
-    onOpenManageMembersForItem,
-    onAssignItemMember,
-    assignItemMemberPending,
-    onUnassignItemMember,
-    unassignItemMemberPending,
+    topicFilters,
+    topicUiState,
+    topicPaginationData,
+    topicFormsState,
+    topicItemFilters,
+    topicItemUiState,
+    topicItemPaginationData,
+    topicItemFormsState,
+    topicMemberMgmtState,
+    topicAvailableMembersUi,
+    pending,
+    callbacks,
   } = props
+
+  const topicsSearch = topicFilters.topicsSearch
+  const setTopicsSearch = topicFilters.setTopicsSearch
+  const topicsStatusFilter = topicFilters.topicsStatusFilter
+  const setTopicsStatusFilter = topicFilters.setTopicsStatusFilter
+  const topicsPage = topicFilters.topicsPage
+  const setTopicsPage = topicFilters.setTopicsPage
+
+  const canEditTopics = props.canEditTopics
+  const canDeleteTopics = props.canDeleteTopics
+  const topicsLoading = topicUiState.topicsLoading
+  const topicsFetchStatus = topicUiState.topicsFetchStatus
+  const topicsIsError = topicUiState.topicsIsError
+  const topicsItems = topicPaginationData.topicsItems
+  const topicsTotal = topicPaginationData.topicsTotal
+  const topicsTotalPages = topicPaginationData.topicsTotalPages
+  const topicsCurrentPage = topicPaginationData.topicsCurrentPage
+
+  const expandedTopicId = topicItemFormsState.expandedTopicId
+  const setExpandedTopicId = topicItemFormsState.setExpandedTopicId
+
+  const showNewTopic = topicFormsState.showNewTopic
+  const setShowNewTopic = topicFormsState.setShowNewTopic
+  const editingTopic = topicFormsState.editingTopic
+  const newTopicTitle = topicFormsState.formNew.title
+  const newTopicDescription = topicFormsState.formNew.description
+  const newTopicOrder = topicFormsState.formNew.order
+  const newTopicStatus = topicFormsState.formNew.status
+  const newTopicError = topicFormsState.formNew.error
+  const setNewTopicTitle = topicFormsState.formNew.setTitle
+  const setNewTopicDescription = topicFormsState.formNew.setDescription
+  const setNewTopicOrder = topicFormsState.formNew.setOrder
+  const setNewTopicStatus = topicFormsState.formNew.setStatus
+  const editTopicTitle = topicFormsState.formEdit.title
+  const editTopicDescription = topicFormsState.formEdit.description
+  const editTopicOrder = topicFormsState.formEdit.order
+  const editTopicStatus = topicFormsState.formEdit.status
+  const editTopicError = topicFormsState.formEdit.error
+  const setEditTopicTitle = topicFormsState.formEdit.setTitle
+  const setEditTopicDescription = topicFormsState.formEdit.setDescription
+  const setEditTopicOrder = topicFormsState.formEdit.setOrder
+  const setEditTopicStatus = topicFormsState.formEdit.setStatus
+  const confirmDeleteTopic = topicFormsState.confirmDeleteTopic
+  const setConfirmDeleteTopic = topicFormsState.setConfirmDeleteTopic
+
+  const createTopicPending = pending.createTopicPending
+  const updateTopicPending = pending.updateTopicPending
+  const deleteTopicPending = pending.deleteTopicPending
+
+  const onNewTopic = callbacks.onNewTopic
+  const onEditTopic = callbacks.onEditTopic
+  const onSubmitTopic = callbacks.onSubmitTopic
+  const onConfirmDeleteTopic = callbacks.onConfirmDeleteTopic
+  const formatRelativeTime = props.formatRelativeTime
+
+  const canAddTopicItems = props.canAddTopicItems
+  const canEditTopicItems = props.canEditTopicItems
+  const canDeleteTopicItems = props.canDeleteTopicItems
+  const canAssignItemMembers = props.canAssignItemMembers
+
+  const topicItemsSearch = topicItemFilters.topicItemsSearch
+  const setTopicItemsSearch = topicItemFilters.setTopicItemsSearch
+  const topicItemsStatusFilter = topicItemFilters.topicItemsStatusFilter
+  const setTopicItemsStatusFilter = topicItemFilters.setTopicItemsStatusFilter
+  const topicItemsLoading = topicItemUiState.topicItemsLoading
+  const topicItemsIsError = topicItemUiState.topicItemsIsError
+  const topicItemsItems = topicItemPaginationData.topicItemsItems
+  const topicItemsTotal = topicItemPaginationData.topicItemsTotal
+
+  const showNewTopicItem = topicItemFormsState.showNewTopicItem
+  const setShowNewTopicItem = topicItemFormsState.setShowNewTopicItem
+  const editingTopicItem = topicItemFormsState.editingTopicItem
+  const newTopicItemTitle = topicItemFormsState.formNew.title
+  const newTopicItemDescription = topicItemFormsState.formNew.description
+  const newTopicItemOrder = topicItemFormsState.formNew.order
+  const newTopicItemStatus = topicItemFormsState.formNew.status
+  const newTopicItemAssignedMembers = topicItemFormsState.formNew.assignedMembers
+  const setNewTopicItemAssignedMembers = topicItemFormsState.formNew.setAssignedMembers
+  const newTopicItemError = topicItemFormsState.formNew.error
+  const setNewTopicItemTitle = topicItemFormsState.formNew.setTitle
+  const setNewTopicItemDescription = topicItemFormsState.formNew.setDescription
+  const setNewTopicItemOrder = topicItemFormsState.formNew.setOrder
+  const setNewTopicItemStatus = topicItemFormsState.formNew.setStatus
+  const editTopicItemTitle = topicItemFormsState.formEdit.title
+  const editTopicItemDescription = topicItemFormsState.formEdit.description
+  const editTopicItemOrder = topicItemFormsState.formEdit.order
+  const editTopicItemStatus = topicItemFormsState.formEdit.status
+  const editTopicItemAssignedMembers = topicItemFormsState.formEdit.assignedMembers
+  const setEditTopicItemAssignedMembers = topicItemFormsState.formEdit.setAssignedMembers
+  const editTopicItemError = topicItemFormsState.formEdit.error
+  const setEditTopicItemTitle = topicItemFormsState.formEdit.setTitle
+  const setEditTopicItemDescription = topicItemFormsState.formEdit.setDescription
+  const setEditTopicItemOrder = topicItemFormsState.formEdit.setOrder
+  const setEditTopicItemStatus = topicItemFormsState.formEdit.setStatus
+  const confirmDeleteTopicItem = topicItemFormsState.confirmDeleteTopicItem
+  const setConfirmDeleteTopicItem = topicItemFormsState.setConfirmDeleteTopicItem
+
+  const createTopicItemPending = pending.createTopicItemPending
+  const updateTopicItemPending = pending.updateTopicItemPending
+  const deleteTopicItemPending = pending.deleteTopicItemPending
+
+  const onNewTopicItem = callbacks.onNewTopicItem
+  const onEditTopicItem = callbacks.onEditTopicItem
+  const onSubmitTopicItem = callbacks.onSubmitTopicItem
+  const onConfirmDeleteTopicItem = callbacks.onConfirmDeleteTopicItem
+
+  const managingMembersForItemId = topicMemberMgmtState.managingMembersForItemId
+  const setManagingMembersForItemId = topicMemberMgmtState.setManagingMembersForItemId
+  const manageMembersError = topicMemberMgmtState.manageMembersError
+
+  const topicItemAvailableMembersLoading = topicAvailableMembersUi.topicItemAvailableMembersLoading
+  const topicItemAvailableMembersIsError = topicAvailableMembersUi.topicItemAvailableMembersIsError
+  const topicItemAvailableMembersItems = topicAvailableMembersUi.topicItemAvailableMembersItems
+
+  const onOpenManageMembersForItem = callbacks.onOpenManageMembersForItem
+  const onAssignItemMember = callbacks.onAssignItemMember
+  const assignItemMemberPending = pending.assignItemMemberPending
+  const onUnassignItemMember = callbacks.onUnassignItemMember
+  const unassignItemMemberPending = pending.unassignItemMemberPending
 
   const managingMembersItem =
     topicItemsItems?.find((i) => i.id === managingMembersForItemId) ?? null

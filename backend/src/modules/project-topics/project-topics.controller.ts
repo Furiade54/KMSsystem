@@ -1,14 +1,15 @@
 import type { NextFunction, Request, Response } from 'express'
-import type {
-  ApiResponse,
-  PaginatedResult,
-  ProjectTopic,
-  ProjectTopicItem,
-  ProjectTopicItemMember,
-  TopicItemStatus,
-  TopicStatus,
+import {
+  type ApiResponse,
+  type PaginatedResult,
+  type ProjectTopic,
+  type ProjectTopicItem,
+  type ProjectTopicItemMember,
+  type TopicItemStatus,
+  type TopicStatus,
+  DB_TOPIC_ITEM_STATUS,
+  DB_TOPIC_STATUS,
 } from '../../../../packages/shared-types/src'
-import { DB_TOPIC_ITEM_STATUS, DB_TOPIC_STATUS } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { logAuditRecord } from '../../shared/db/audit'
 import { AppError, NotFoundError } from '../../shared/errors/AppError'
@@ -376,7 +377,7 @@ export async function createTopic(
 
     const title = String(req.body?.title || '').trim()
     if (title.length < 1 || title.length > 255) throw new AppError('Título inválido (1..255)', 400)
-    const description = req.body?.description == null ? null : String(req.body.description)
+    const description = (req.body?.description === null || req.body?.description === undefined) ? null : String(req.body.description)
     const order = req.body?.order === undefined ? 0 : Math.max(0, Math.min(1_000_000, Number(req.body.order || 0)))
     const status = parseOptionalTopicStatus(req.body?.status) ?? 'ABIERTO'
 
@@ -434,7 +435,7 @@ export async function updateTopic(
     const patchStatus = parseOptionalTopicStatus(req.body?.status)
     const patchDescription = req.body?.description === undefined
       ? undefined
-      : req.body?.description == null ? null : String(req.body.description)
+      : (req.body?.description === null || req.body?.description === undefined) ? null : String(req.body.description)
     const patchOrder = req.body?.order === undefined
       ? undefined
       : Math.max(0, Math.min(1_000_000, Number(req.body.order || 0)))
@@ -577,7 +578,7 @@ export async function listTopicItems(
             ? `CAST('${id}' AS UNIQUEIDENTIFIER)`
             : null
         })
-        .filter((v): v is string => v != null)
+        .filter((v): v is string => v !== null && v !== undefined)
         .join(', ')
       const inClause = guidsLiteral.length > 0
         ? `WHERE m.IdTemaItem IN (${guidsLiteral})`
@@ -668,7 +669,7 @@ export async function createTopicItem(
 
     const title = String(req.body?.title || '').trim()
     if (title.length < 1 || title.length > 255) throw new AppError('Título ítem inválido (1..255)', 400)
-    const description = req.body?.description == null ? null : String(req.body.description)
+    const description = (req.body?.description === null || req.body?.description === undefined) ? null : String(req.body.description)
     const order = req.body?.order === undefined ? 0 : Math.max(0, Math.min(1_000_000, Number(req.body.order || 0)))
     const status = parseOptionalTopicItemStatus(req.body?.status) ?? 'PENDIENTE'
     const assignedMemberIdsRaw = req.body?.assignedMemberIds
@@ -769,7 +770,7 @@ export async function updateTopicItem(
     const patchStatus = parseOptionalTopicItemStatus(req.body?.status)
     const patchDescription = req.body?.description === undefined
       ? undefined
-      : req.body?.description == null ? null : String(req.body.description)
+      : (req.body?.description === null || req.body?.description === undefined) ? null : String(req.body.description)
     const patchOrder = req.body?.order === undefined
       ? undefined
       : Math.max(0, Math.min(1_000_000, Number(req.body.order || 0)))

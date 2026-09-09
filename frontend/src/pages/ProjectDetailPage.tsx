@@ -55,6 +55,8 @@ import {
 } from '../components/project/ProjectExtraModals'
 import ConfirmReplaceActaModal from '../components/project/ConfirmReplaceActaModal'
 import ProjectTopicsTab from '../components/project/ProjectTopicsTab'
+import { useTopicForms } from '../components/project/project-topics/useTopicForms'
+import { useTopicItemForms } from '../components/project/project-topics/useTopicItemForms'
 import {
   ApiProjectStatus,
   deleteProject,
@@ -205,7 +207,7 @@ function ProjectDetailPage() {
   const [masterSelectedFileId, setMasterSelectedFileId] = useState<string | null>(null)
   const [showConfirmClearMaster, setShowConfirmClearMaster] = useState(false)
   const [meetingsPage, setMeetingsPage] = useState(1)
-  const [meetingsPageSize] = useState(20)
+  const meetingsPageSize = 20
   const [meetingsSearch, setMeetingsSearch] = useState('')
   const [meetingsStatusFilter, setMeetingsStatusFilter] = useState<ApiMeetingStatus | ''>('')
   const [showNewMeeting, setShowNewMeeting] = useState(false)
@@ -237,46 +239,16 @@ function ProjectDetailPage() {
     previousFileId: string | null
   }>({ open: false, meetingId: null, file: null, previousFileId: null })
   const [topicsPage, setTopicsPage] = useState(1)
-  const [topicsPageSize] = useState(20)
+  const topicsPageSize = 20
   const [topicsSearch, setTopicsSearch] = useState('')
   const [topicsStatusFilter, setTopicsStatusFilter] = useState<ApiTopicStatus | ''>('')
-  const [showNewTopic, setShowNewTopic] = useState(false)
-  const [editingTopic, setEditingTopic] = useState<ApiTopic | null>(null)
-  const [newTopicTitle, setNewTopicTitle] = useState('')
-  const [newTopicDescription, setNewTopicDescription] = useState('')
-  const [newTopicOrder, setNewTopicOrder] = useState(0)
-  const [newTopicStatus, setNewTopicStatus] = useState<ApiTopicStatus>('OPEN')
-  const [newTopicError, setNewTopicError] = useState('')
-  const [editTopicTitle, setEditTopicTitle] = useState('')
-  const [editTopicDescription, setEditTopicDescription] = useState('')
-  const [editTopicOrder, setEditTopicOrder] = useState(0)
-  const [editTopicStatus, setEditTopicStatus] = useState<ApiTopicStatus>('OPEN')
-  const [editTopicError, setEditTopicError] = useState('')
-  const [confirmDeleteTopic, setConfirmDeleteTopic] = useState<ApiTopic | null>(null)
-  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null)
+  const topicForms = useTopicForms()
 
-  const [topicItemsPage] = useState(1)
-  const [topicItemsPageSize] = useState(200)
+  const topicItemsPage = 1
+  const topicItemsPageSize = 200
   const [topicItemsSearch, setTopicItemsSearch] = useState('')
   const [topicItemsStatusFilter, setTopicItemsStatusFilter] = useState<ApiTopicItemStatus | ''>('')
-  const [showNewTopicItem, setShowNewTopicItem] = useState(false)
-  const [editingTopicItem, setEditingTopicItem] = useState<ApiTopicItem | null>(null)
-  const [newTopicItemTitle, setNewTopicItemTitle] = useState('')
-  const [newTopicItemDescription, setNewTopicItemDescription] = useState('')
-  const [newTopicItemOrder, setNewTopicItemOrder] = useState(0)
-  const [newTopicItemStatus, setNewTopicItemStatus] = useState<ApiTopicItemStatus>('PENDING')
-  const [newTopicItemAssignedMembers, setNewTopicItemAssignedMembers] = useState<string[]>([])
-  const [newTopicItemError, setNewTopicItemError] = useState('')
-  const [editTopicItemTitle, setEditTopicItemTitle] = useState('')
-  const [editTopicItemDescription, setEditTopicItemDescription] = useState('')
-  const [editTopicItemOrder, setEditTopicItemOrder] = useState(0)
-  const [editTopicItemStatus, setEditTopicItemStatus] = useState<ApiTopicItemStatus>('PENDING')
-  const [editTopicItemAssignedMembers, setEditTopicItemAssignedMembers] = useState<string[]>([])
-  const [editTopicItemError, setEditTopicItemError] = useState('')
-  const [confirmDeleteTopicItem, setConfirmDeleteTopicItem] = useState<ApiTopicItem | null>(null)
-
-  const [managingMembersForItemId, setManagingMembersForItemId] = useState<string | null>(null)
-  const [manageMembersError, setManageMembersError] = useState('')
+  const topicItemForms = useTopicItemForms()
   const TREE_MIN_W = 180
   const TREE_MAX_W = 420
 
@@ -414,13 +386,13 @@ function ProjectDetailPage() {
   const visibleFoldersCurrentLevel = useMemo<ApiFolder[]>(() => {
     if (!foldersQuery.data?.items) return []
     return foldersQuery.data.items.filter((f) => {
-      if (selectedFolderId == null) return f.parentId == null
+      if (selectedFolderId === null || selectedFolderId === undefined) return f.parentId === null || f.parentId === undefined
       return f.parentId === selectedFolderId
     })
   }, [foldersQuery.data, selectedFolderId])
 
   const breadcrumbChain = useMemo<ApiFolder[]>(() => {
-    if (selectedFolderId == null) return []
+    if (selectedFolderId === null || selectedFolderId === undefined) return []
     const chain: ApiFolder[] = []
     let cur: ApiFolder | undefined = flatFolderById.get(selectedFolderId)
     const safety = new Set<string>()
@@ -517,7 +489,7 @@ function ProjectDetailPage() {
       'topic',
       'items',
       projectId,
-      expandedTopicId,
+      topicItemForms.state.expandedTopicId,
       {
         page: topicItemsPage,
         pageSize: topicItemsPageSize,
@@ -528,36 +500,30 @@ function ProjectDetailPage() {
     queryFn: () =>
       fetchTopicItems({
         projectId,
-        topicId: expandedTopicId as string,
+        topicId: topicItemForms.state.expandedTopicId as string,
         page: topicItemsPage,
         pageSize: topicItemsPageSize,
         search: topicItemsSearch.trim() || undefined,
         status: topicItemsStatusFilter || undefined,
       }),
-    enabled: Boolean(projectId) && Boolean(expandedTopicId),
+    enabled: Boolean(projectId) && Boolean(topicItemForms.state.expandedTopicId),
     staleTime: 20_000,
     retry: 1,
   })
 
   const topicItemAvailableMembersQuery = useQuery({
-    queryKey: ['project', 'topic', 'item', 'available-members', projectId, expandedTopicId, managingMembersForItemId],
+    queryKey: ['project', 'topic', 'item', 'available-members', projectId, topicItemForms.state.expandedTopicId, topicItemForms.memberState.managingMembersForItemId],
     queryFn: () =>
-      fetchAvailableMembersForItem(projectId, expandedTopicId as string, managingMembersForItemId as string),
-    enabled: Boolean(projectId) && Boolean(expandedTopicId) && Boolean(managingMembersForItemId),
+      fetchAvailableMembersForItem(projectId, topicItemForms.state.expandedTopicId as string, topicItemForms.memberState.managingMembersForItemId as string),
+    enabled: Boolean(projectId) && Boolean(topicItemForms.state.expandedTopicId) && Boolean(topicItemForms.memberState.managingMembersForItemId),
     staleTime: 10_000,
     retry: 1,
   })
 
   const detailIsLoading = projectQuery.isLoading && projectQuery.fetchStatus !== 'idle'
   const detailIs404 = projectQuery.isError && (projectQuery.error as any)?.message?.toLowerCase().includes('no encontrado')
-
-  if (!projectId) {
-    return <Navigate to="/projects" replace />
-  }
-
-  if (detailIs404) {
-    return <Navigate to="/projects" replace />
-  }
+  const redirectNoProject = !projectId
+  const redirectNotFound = !!detailIs404
 
   const invalidateDetail = () => {
     queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
@@ -915,17 +881,11 @@ function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setShowNewTopic(false)
-      setEditingTopic(null)
-      setNewTopicTitle('')
-      setNewTopicDescription('')
-      setNewTopicOrder(0)
-      setNewTopicStatus('OPEN')
-      setNewTopicError('')
+      topicForms.closeTopicForm()
       setPageToast({ kind: 'success', title: 'Tema creado', message: 'El tema se registró correctamente en el proyecto.' })
     },
     onError: (err: unknown) => {
-      setNewTopicError(err instanceof Error ? err.message : 'Error desconocido')
+      topicForms.state.formNew.setError(err instanceof Error ? err.message : 'Error desconocido')
     },
   })
 
@@ -935,17 +895,11 @@ function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setShowNewTopic(false)
-      setEditingTopic(null)
-      setEditTopicTitle('')
-      setEditTopicDescription('')
-      setEditTopicOrder(0)
-      setEditTopicStatus('OPEN')
-      setEditTopicError('')
+      topicForms.closeTopicForm()
       setPageToast({ kind: 'success', title: 'Tema actualizado', message: 'Se guardaron los cambios del tema.' })
     },
     onError: (err: unknown) => {
-      setEditTopicError(err instanceof Error ? err.message : 'Error desconocido')
+      topicForms.state.formEdit.setError(err instanceof Error ? err.message : 'Error desconocido')
     },
   })
 
@@ -954,8 +908,8 @@ function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setConfirmDeleteTopic(null)
-      setExpandedTopicId((prev) => prev === (confirmDeleteTopic?.id ?? null) ? null : prev)
+      topicForms.state.setConfirmDeleteTopic(null)
+      topicItemForms.state.setExpandedTopicId((prev) => prev === (topicForms.state.confirmDeleteTopic?.id ?? null) ? null : prev)
       setPageToast({ kind: 'success', title: 'Tema eliminado', message: 'El tema se retiró del proyecto.' })
     },
     onError: (err: any) => {
@@ -971,16 +925,15 @@ function ProjectDetailPage() {
     mutationFn: (payload: CreateTopicItemPayload & { topicId: string }) =>
       apiCreateTopicItem(projectId, payload.topicId, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, expandedTopicId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, topicItemForms.state.expandedTopicId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setShowNewTopicItem(false)
-      setEditingTopicItem(null)
-      resetNewTopicItemForm()
+      topicItemForms.closeTopicItemForm()
+      topicItemForms.resetNewTopicItemForm()
       setPageToast({ kind: 'success', title: 'Concepto creado', message: 'Se registró el concepto en el tema.' })
     },
     onError: (err: unknown) => {
-      setNewTopicItemError(err instanceof Error ? err.message : 'Error desconocido')
+      topicItemForms.state.formNew.setError(err instanceof Error ? err.message : 'Error desconocido')
     },
   })
 
@@ -988,16 +941,15 @@ function ProjectDetailPage() {
     mutationFn: (payload: { topicId: string; itemId: string; patch: UpdateTopicItemPayload }) =>
       apiUpdateTopicItem(projectId, payload.topicId, payload.itemId, payload.patch),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, expandedTopicId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, topicItemForms.state.expandedTopicId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setShowNewTopicItem(false)
-      setEditingTopicItem(null)
-      resetEditTopicItemForm()
+      topicItemForms.closeTopicItemForm()
+      topicItemForms.resetEditTopicItemForm()
       setPageToast({ kind: 'success', title: 'Concepto actualizado', message: 'Se guardaron los cambios.' })
     },
     onError: (err: unknown) => {
-      setEditTopicItemError(err instanceof Error ? err.message : 'Error desconocido')
+      topicItemForms.state.formEdit.setError(err instanceof Error ? err.message : 'Error desconocido')
     },
   })
 
@@ -1005,11 +957,11 @@ function ProjectDetailPage() {
     mutationFn: (payload: { topicId: string; itemId: string }) =>
       apiDeleteTopicItem(projectId, payload.topicId, payload.itemId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, expandedTopicId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, topicItemForms.state.expandedTopicId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setConfirmDeleteTopicItem(null)
-      setManagingMembersForItemId((prev) => prev === confirmDeleteTopicItem?.id ? null : prev)
+      topicItemForms.state.setConfirmDeleteTopicItem(null)
+      topicItemForms.memberState.setManagingMembersForItemId((prev) => prev === topicItemForms.state.confirmDeleteTopicItem?.id ? null : prev)
       setPageToast({ kind: 'success', title: 'Concepto eliminado', message: 'El concepto se retiró del tema.' })
     },
     onError: (err: any) => {
@@ -1025,14 +977,14 @@ function ProjectDetailPage() {
     mutationFn: (payload: { topicId: string; itemId: string; projectMemberId: string }) =>
       assignMemberToTopicItem(projectId, payload.topicId, payload.itemId, { projectMemberId: payload.projectMemberId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, expandedTopicId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'item', 'available-members', projectId, expandedTopicId, managingMembersForItemId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, topicItemForms.state.expandedTopicId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'item', 'available-members', projectId, topicItemForms.state.expandedTopicId, topicItemForms.memberState.managingMembersForItemId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setManageMembersError('')
+      topicItemForms.memberState.setManageMembersError('')
     },
     onError: (err: any) => {
-      setManageMembersError(err?.response?.data?.message || err?.message || 'Error al asignar miembro')
+      topicItemForms.memberState.setManageMembersError(err?.response?.data?.message || err?.message || 'Error al asignar miembro')
     },
   })
 
@@ -1040,128 +992,43 @@ function ProjectDetailPage() {
     mutationFn: (payload: { topicId: string; itemId: string; assignmentId: string }) =>
       unassignMemberFromTopicItem(projectId, payload.topicId, payload.itemId, payload.assignmentId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, expandedTopicId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'item', 'available-members', projectId, expandedTopicId, managingMembersForItemId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'items', projectId, topicItemForms.state.expandedTopicId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'topic', 'item', 'available-members', projectId, topicItemForms.state.expandedTopicId, topicItemForms.memberState.managingMembersForItemId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
       invalidateDetail()
-      setManageMembersError('')
+      topicItemForms.memberState.setManageMembersError('')
     },
     onError: (err: any) => {
-      setManageMembersError(err?.response?.data?.message || err?.message || 'Error al desasignar miembro')
+      topicItemForms.memberState.setManageMembersError(err?.response?.data?.message || err?.message || 'Error al desasignar miembro')
     },
   })
 
-  function resetNewTopicItemForm() {
-    setNewTopicItemTitle('')
-    setNewTopicItemDescription('')
-    setNewTopicItemOrder(0)
-    setNewTopicItemStatus('PENDING')
-    setNewTopicItemAssignedMembers([])
-    setNewTopicItemError('')
-  }
-
-  function resetEditTopicItemForm() {
-    setEditTopicItemTitle('')
-    setEditTopicItemDescription('')
-    setEditTopicItemOrder(0)
-    setEditTopicItemStatus('PENDING')
-    setEditTopicItemAssignedMembers([])
-    setEditTopicItemError('')
-  }
-
-  const openNewTopicItem = () => {
-    resetNewTopicItemForm()
-    setEditingTopicItem(null)
-    setShowNewTopicItem(true)
-  }
-
-  const openEditTopicItem = (item: ApiTopicItem) => {
-    setEditTopicItemTitle(item.title)
-    setEditTopicItemDescription(item.description ?? '')
-    setEditTopicItemOrder(typeof item.order === 'number' ? item.order : 0)
-    setEditTopicItemStatus(item.status)
-    setEditTopicItemAssignedMembers([...(item.assignedMemberIds ?? [])])
-    setEditTopicItemError('')
-    setEditingTopicItem(item)
-    setShowNewTopicItem(true)
-  }
+  const openNewTopicItem = () => topicItemForms.openNewTopicItem()
+  const openEditTopicItem = (item: ApiTopicItem) => topicItemForms.openEditTopicItem(item)
+  const openManageMembersForItem = (item: ApiTopicItem) => topicItemForms.openManageMembersForItem(item)
 
   const handleSubmitTopicItem = (e: React.FormEvent) => {
     e.preventDefault()
-    const topicId = expandedTopicId
-    if (!topicId) return
-    if (editingTopicItem) {
-      const title = editTopicItemTitle.trim()
-      const description = editTopicItemDescription.trim() || null
-      const order = Math.max(0, Number(editTopicItemOrder) || 0)
-      const assignedMemberIds = editTopicItemAssignedMembers
-      if (title.length === 0) { setEditTopicItemError('El título es obligatorio'); return }
-      if (title.length > 255) { setEditTopicItemError('Máximo 255 caracteres'); return }
-      if ((description?.length ?? 0) > 2000) { setEditTopicItemError('Máximo 2000 caracteres en descripción'); return }
-      setEditTopicItemError('')
-      updateTopicItemMutation.mutate({
-        topicId,
-        itemId: editingTopicItem.id,
-        patch: { title, description, order, status: editTopicItemStatus, assignedMemberIds },
-      })
+    if (topicItemForms.state.editingTopicItem) {
+      const payload = topicItemForms.buildUpdateTopicItemPayload()
+      if (payload) updateTopicItemMutation.mutate(payload)
     } else {
-      const title = newTopicItemTitle.trim()
-      const description = newTopicItemDescription.trim() || null
-      const order = Math.max(0, Number(newTopicItemOrder) || 0)
-      const assignedMemberIds = newTopicItemAssignedMembers
-      if (title.length === 0) { setNewTopicItemError('El título es obligatorio'); return }
-      if (title.length > 255) { setNewTopicItemError('Máximo 255 caracteres'); return }
-      if ((description?.length ?? 0) > 2000) { setNewTopicItemError('Máximo 2000 caracteres en descripción'); return }
-      setNewTopicItemError('')
-      createTopicItemMutation.mutate({ topicId, title, description, order, status: newTopicItemStatus, assignedMemberIds })
+      const payload = topicItemForms.buildCreateTopicItemPayload()
+      if (payload) createTopicItemMutation.mutate(payload)
     }
   }
 
-  const openManageMembersForItem = (item: ApiTopicItem) => {
-    setManageMembersError('')
-    setManagingMembersForItemId(item.id)
-  }
-
-  const openNewTopic = () => {
-    setNewTopicTitle('')
-    setNewTopicDescription('')
-    setNewTopicOrder(0)
-    setNewTopicStatus('OPEN')
-    setNewTopicError('')
-    setEditingTopic(null)
-    setShowNewTopic(true)
-  }
-
-  const openEditTopic = (t: ApiTopic) => {
-    setEditTopicTitle(t.title)
-    setEditTopicDescription(t.description ?? '')
-    setEditTopicOrder(typeof t.order === 'number' ? t.order : 0)
-    setEditTopicStatus(t.status)
-    setEditTopicError('')
-    setEditingTopic(t)
-    setShowNewTopic(true)
-  }
+  const openNewTopic = () => topicForms.openNewTopic()
+  const openEditTopic = (t: ApiTopic) => topicForms.openEditTopic(t)
 
   const handleSubmitTopic = (e: React.FormEvent) => {
     e.preventDefault()
-    if (editingTopic) {
-      const title = editTopicTitle.trim()
-      const description = editTopicDescription.trim() || null
-      const order = Math.max(0, Number(editTopicOrder) || 0)
-      if (title.length === 0) { setEditTopicError('El título es obligatorio'); return }
-      if (title.length > 255) { setEditTopicError('Máximo 255 caracteres'); return }
-      if ((description?.length ?? 0) > 2000) { setEditTopicError('Máximo 2000 caracteres en descripción'); return }
-      setEditTopicError('')
-      updateTopicMutation.mutate({ topicId: editingTopic.id, patch: { title, description, order, status: editTopicStatus } })
+    if (topicForms.state.editingTopic) {
+      const payload = topicForms.buildUpdateTopicPayload()
+      if (payload) updateTopicMutation.mutate(payload)
     } else {
-      const title = newTopicTitle.trim()
-      const description = newTopicDescription.trim() || null
-      const order = Math.max(0, Number(newTopicOrder) || 0)
-      if (title.length === 0) { setNewTopicError('El título es obligatorio'); return }
-      if (title.length > 255) { setNewTopicError('Máximo 255 caracteres'); return }
-      if ((description?.length ?? 0) > 2000) { setNewTopicError('Máximo 2000 caracteres en descripción'); return }
-      setNewTopicError('')
-      createTopicMutation.mutate({ title, description, order, status: newTopicStatus })
+      const payload = topicForms.buildCreateTopicPayload()
+      if (payload) createTopicMutation.mutate(payload)
     }
   }
 
@@ -1818,6 +1685,10 @@ function ProjectDetailPage() {
   const selectedId = selectedResource?.id
   const selectedType = selectedResource?.type
 
+  if (redirectNoProject || redirectNotFound) {
+    return <Navigate to="/projects" replace />
+  }
+
   return (
     <div className="flex flex-col h-full">
       <ProjectHeader
@@ -2005,111 +1876,80 @@ function ProjectDetailPage() {
 
       {activeTab === 'topics' && (
         <ProjectTopicsTab
-          topicsSearch={topicsSearch}
-          setTopicsSearch={setTopicsSearch}
-          topicsStatusFilter={topicsStatusFilter}
-          setTopicsStatusFilter={setTopicsStatusFilter}
-          topicsPage={topicsPage}
-          setTopicsPage={setTopicsPage}
+          topicFilters={{
+            topicsSearch,
+            setTopicsSearch,
+            topicsStatusFilter,
+            setTopicsStatusFilter,
+            topicsPage,
+            setTopicsPage,
+            topicsPageSize,
+          }}
+          topicUiState={{
+            topicsLoading: topicsQuery.isLoading,
+            topicsFetchStatus: topicsQuery.fetchStatus,
+            topicsIsError: topicsQuery.isError,
+          }}
+          topicPaginationData={{
+            topicsItems: topicsQuery.data?.items,
+            topicsTotal: topicsQuery.data?.total,
+            topicsTotalPages: topicsQuery.data?.totalPages,
+            topicsCurrentPage: topicsQuery.data?.page,
+          }}
+          topicFormsState={topicForms.state}
+          topicItemFilters={{
+            topicItemsSearch,
+            setTopicItemsSearch,
+            topicItemsStatusFilter,
+            setTopicItemsStatusFilter,
+            topicItemsPage,
+            topicItemsPageSize,
+          }}
+          topicItemUiState={{
+            topicItemsLoading: topicItemsQuery.isLoading,
+            topicItemsIsError: topicItemsQuery.isError,
+          }}
+          topicItemPaginationData={{
+            topicItemsItems: topicItemsQuery.data?.items,
+            topicItemsTotal: topicItemsQuery.data?.total,
+          }}
+          topicItemFormsState={topicItemForms.state}
+          topicMemberMgmtState={topicItemForms.memberState}
+          topicAvailableMembersUi={{
+            topicItemAvailableMembersLoading: topicItemAvailableMembersQuery.isLoading,
+            topicItemAvailableMembersIsError: topicItemAvailableMembersQuery.isError,
+            topicItemAvailableMembersItems: topicItemAvailableMembersQuery.data,
+          }}
+          pending={{
+            createTopicPending: createTopicMutation.isPending,
+            updateTopicPending: updateTopicMutation.isPending,
+            deleteTopicPending: deleteTopicMutation.isPending,
+            createTopicItemPending: createTopicItemMutation.isPending,
+            updateTopicItemPending: updateTopicItemMutation.isPending,
+            deleteTopicItemPending: deleteTopicItemMutation.isPending,
+            assignItemMemberPending: assignItemMemberMutation.isPending,
+            unassignItemMemberPending: unassignItemMemberMutation.isPending,
+          }}
+          callbacks={{
+            onNewTopic: openNewTopic,
+            onEditTopic: openEditTopic,
+            onSubmitTopic: handleSubmitTopic,
+            onConfirmDeleteTopic: () => { if (topicForms.state.confirmDeleteTopic) deleteTopicMutation.mutate(topicForms.state.confirmDeleteTopic.id) },
+            onNewTopicItem: openNewTopicItem,
+            onEditTopicItem: openEditTopicItem,
+            onSubmitTopicItem: handleSubmitTopicItem,
+            onConfirmDeleteTopicItem: () => { if (topicItemForms.state.confirmDeleteTopicItem && topicItemForms.state.expandedTopicId) deleteTopicItemMutation.mutate({ topicId: topicItemForms.state.expandedTopicId, itemId: topicItemForms.state.confirmDeleteTopicItem.id }) },
+            onOpenManageMembersForItem: openManageMembersForItem,
+            onAssignItemMember: (pmId) => { if (topicItemForms.state.expandedTopicId && topicItemForms.memberState.managingMembersForItemId) assignItemMemberMutation.mutate({ topicId: topicItemForms.state.expandedTopicId, itemId: topicItemForms.memberState.managingMembersForItemId, projectMemberId: pmId }) },
+            onUnassignItemMember: (assignmentId) => { if (topicItemForms.state.expandedTopicId && topicItemForms.memberState.managingMembersForItemId) unassignItemMemberMutation.mutate({ topicId: topicItemForms.state.expandedTopicId, itemId: topicItemForms.memberState.managingMembersForItemId, assignmentId }) },
+          }}
           canEditTopics={canEditTopics}
           canDeleteTopics={canDeleteTopics}
-          topicsLoading={topicsQuery.isLoading}
-          topicsFetchStatus={topicsQuery.fetchStatus}
-          topicsIsError={topicsQuery.isError}
-          topicsItems={topicsQuery.data?.items}
-          topicsTotal={topicsQuery.data?.total}
-          topicsTotalPages={topicsQuery.data?.totalPages}
-          topicsCurrentPage={topicsQuery.data?.page}
-          expandedTopicId={expandedTopicId}
-          setExpandedTopicId={setExpandedTopicId}
-          showNewTopic={showNewTopic}
-          setShowNewTopic={setShowNewTopic}
-          editingTopic={editingTopic}
-          newTopicTitle={newTopicTitle}
-          newTopicDescription={newTopicDescription}
-          newTopicOrder={newTopicOrder}
-          newTopicStatus={newTopicStatus}
-          newTopicError={newTopicError}
-          setNewTopicTitle={setNewTopicTitle}
-          setNewTopicDescription={setNewTopicDescription}
-          setNewTopicOrder={setNewTopicOrder}
-          setNewTopicStatus={setNewTopicStatus}
-          editTopicTitle={editTopicTitle}
-          editTopicDescription={editTopicDescription}
-          editTopicOrder={editTopicOrder}
-          editTopicStatus={editTopicStatus}
-          editTopicError={editTopicError}
-          setEditTopicTitle={setEditTopicTitle}
-          setEditTopicDescription={setEditTopicDescription}
-          setEditTopicOrder={setEditTopicOrder}
-          setEditTopicStatus={setEditTopicStatus}
-          confirmDeleteTopic={confirmDeleteTopic}
-          setConfirmDeleteTopic={setConfirmDeleteTopic}
-          createTopicPending={createTopicMutation.isPending}
-          updateTopicPending={updateTopicMutation.isPending}
-          deleteTopicPending={deleteTopicMutation.isPending}
-          onNewTopic={openNewTopic}
-          onEditTopic={openEditTopic}
-          onSubmitTopic={handleSubmitTopic}
-          onConfirmDeleteTopic={() => { if (confirmDeleteTopic) deleteTopicMutation.mutate(confirmDeleteTopic.id) }}
-          formatRelativeTime={formatRelativeTime}
           canAddTopicItems={canEditTopics}
           canEditTopicItems={canEditTopics}
           canDeleteTopicItems={canDeleteTopics}
           canAssignItemMembers={canEditTopics}
-          topicItemsSearch={topicItemsSearch}
-          setTopicItemsSearch={setTopicItemsSearch}
-          topicItemsStatusFilter={topicItemsStatusFilter}
-          setTopicItemsStatusFilter={setTopicItemsStatusFilter}
-          topicItemsLoading={topicItemsQuery.isLoading}
-          topicItemsIsError={topicItemsQuery.isError}
-          topicItemsItems={topicItemsQuery.data?.items}
-          topicItemsTotal={topicItemsQuery.data?.total}
-          showNewTopicItem={showNewTopicItem}
-          setShowNewTopicItem={setShowNewTopicItem}
-          editingTopicItem={editingTopicItem}
-          newTopicItemTitle={newTopicItemTitle}
-          newTopicItemDescription={newTopicItemDescription}
-          newTopicItemOrder={newTopicItemOrder}
-          newTopicItemStatus={newTopicItemStatus}
-          newTopicItemAssignedMembers={newTopicItemAssignedMembers}
-          setNewTopicItemAssignedMembers={setNewTopicItemAssignedMembers}
-          newTopicItemError={newTopicItemError}
-          setNewTopicItemTitle={setNewTopicItemTitle}
-          setNewTopicItemDescription={setNewTopicItemDescription}
-          setNewTopicItemOrder={setNewTopicItemOrder}
-          setNewTopicItemStatus={setNewTopicItemStatus}
-          editTopicItemTitle={editTopicItemTitle}
-          editTopicItemDescription={editTopicItemDescription}
-          editTopicItemOrder={editTopicItemOrder}
-          editTopicItemStatus={editTopicItemStatus}
-          editTopicItemAssignedMembers={editTopicItemAssignedMembers}
-          setEditTopicItemAssignedMembers={setEditTopicItemAssignedMembers}
-          editTopicItemError={editTopicItemError}
-          setEditTopicItemTitle={setEditTopicItemTitle}
-          setEditTopicItemDescription={setEditTopicItemDescription}
-          setEditTopicItemOrder={setEditTopicItemOrder}
-          setEditTopicItemStatus={setEditTopicItemStatus}
-          confirmDeleteTopicItem={confirmDeleteTopicItem}
-          setConfirmDeleteTopicItem={setConfirmDeleteTopicItem}
-          createTopicItemPending={createTopicItemMutation.isPending}
-          updateTopicItemPending={updateTopicItemMutation.isPending}
-          deleteTopicItemPending={deleteTopicItemMutation.isPending}
-          onNewTopicItem={openNewTopicItem}
-          onEditTopicItem={openEditTopicItem}
-          onSubmitTopicItem={handleSubmitTopicItem}
-          onConfirmDeleteTopicItem={() => { if (confirmDeleteTopicItem && expandedTopicId) deleteTopicItemMutation.mutate({ topicId: expandedTopicId, itemId: confirmDeleteTopicItem.id }) }}
-          managingMembersForItemId={managingMembersForItemId}
-          setManagingMembersForItemId={setManagingMembersForItemId}
-          manageMembersError={manageMembersError}
-          topicItemAvailableMembersLoading={topicItemAvailableMembersQuery.isLoading}
-          topicItemAvailableMembersIsError={topicItemAvailableMembersQuery.isError}
-          topicItemAvailableMembersItems={topicItemAvailableMembersQuery.data}
-          onOpenManageMembersForItem={openManageMembersForItem}
-          onAssignItemMember={(pmId) => { if (expandedTopicId && managingMembersForItemId) assignItemMemberMutation.mutate({ topicId: expandedTopicId, itemId: managingMembersForItemId, projectMemberId: pmId }) }}
-          assignItemMemberPending={assignItemMemberMutation.isPending}
-          onUnassignItemMember={(assignmentId) => { if (expandedTopicId && managingMembersForItemId) unassignItemMemberMutation.mutate({ topicId: expandedTopicId, itemId: managingMembersForItemId, assignmentId }) }}
-          unassignItemMemberPending={unassignItemMemberMutation.isPending}
+          formatRelativeTime={formatRelativeTime}
         />
       )}
 
@@ -2278,7 +2118,8 @@ function ProjectDetailPage() {
         project={project}
         isMasterFolder={
           !!folderContextMenu &&
-          project?.docMaestroCarpetaId != null &&
+          project?.docMaestroCarpetaId !== null &&
+          project?.docMaestroCarpetaId !== undefined &&
           String(project.docMaestroCarpetaId).toLowerCase() === String(folderContextMenu.folder.id).toLowerCase()
         }
         onClose={() => setFolderContextMenu(null)}
@@ -2321,7 +2162,8 @@ function ProjectDetailPage() {
         project={project}
         isMasterFile={
           !!fileContextMenu &&
-          project?.docMaestroArchivoId != null &&
+          project?.docMaestroArchivoId !== null &&
+          project?.docMaestroArchivoId !== undefined &&
           String(project.docMaestroArchivoId).toLowerCase() === String(fileContextMenu.file.id).toLowerCase()
         }
         onClose={() => setFileContextMenu(null)}
