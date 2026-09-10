@@ -186,7 +186,8 @@ export async function setMeetingMinutesFile(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: updated.Titulo,
-      extra: { projectId, previousMinutesFileId: current.IdActaArchivo, minutesFileId: updated.IdActaArchivo },
+      projectId,
+      extra: { previousMinutesFileId: current.IdActaArchivo, minutesFileId: updated.IdActaArchivo },
       req,
     })
     res.status(200).json({ success: true, data: mapMeeting(updated, linked[meetingId]) })
@@ -341,7 +342,7 @@ export async function createMeeting(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: title,
-      extra: { projectId },
+      projectId,
       req,
     })
     res.status(201).json({ success: true, data: mapMeeting(row, linkedMap[meetingId]) })
@@ -413,7 +414,8 @@ export async function updateMeeting(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: updated.Titulo,
-      extra: { previousTitle: current.Titulo, projectId },
+      projectId,
+      extra: { previousTitle: current.Titulo },
       req,
     })
     res.status(200).json({ success: true, data: mapMeeting(updated, linkedMap[meetingId]) })
@@ -444,7 +446,7 @@ export async function deleteMeeting(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: current.Titulo,
-      extra: { projectId },
+      projectId,
       req,
     })
     res.status(204).send()
@@ -565,7 +567,8 @@ export async function linkTopicToMeeting(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, topicId, topicTitle: tema.Titulo },
+      projectId,
+      extra: { topicId, topicTitle: tema.Titulo },
       req,
     })
 
@@ -613,7 +616,8 @@ export async function unlinkTopicFromMeeting(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, topicId, topicTitle: temaTitulo },
+      projectId,
+      extra: { topicId, topicTitle: temaTitulo },
       req,
     })
 

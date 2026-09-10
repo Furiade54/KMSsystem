@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express'
 import type { ApiResponse } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { sqlLocalToIso } from '../../shared/utils/date'
+import { ForbiddenError } from '../../shared/errors/AppError'
 
 type ActivityItem = {
   id: string
@@ -16,32 +17,60 @@ type ActivityItem = {
   occurredAt: string
 }
 
+async function ensureProjectAccess(
+  pool: Awaited<ReturnType<typeof getDbPool>>,
+  auth: { organizationId: string; userId: string },
+  projectId: string
+): Promise<void> {
+  const req = pool.request()
+  req.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+  req.input('userId', sql.UniqueIdentifier, auth.userId)
+  req.input('projectId', sql.UniqueIdentifier, projectId)
+  const row = await req.query(`
+    SELECT p.Id FROM Proyectos p
+    WHERE p.Id = @projectId AND p.IdOrganizacion = @orgId
+      AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
+      AND (p.IdPropietario = @userId OR EXISTS (
+        SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto=p.Id AND mp.IdUsuario=@userId
+      ))
+  `)
+  if (!row.recordset.length) throw new ForbiddenError('No tienes acceso al proyecto especificado')
+}
+
 async function fallbackFromEntities(
   pool: Awaited<ReturnType<typeof getDbPool>>,
   auth: { organizationId: string; userId: string },
   limit: number,
-  offset: number = 0
+  offset: number = 0,
+  projectId?: string | null
 ): Promise<{ items: ActivityItem[]; total: number }> {
   try {
     const r = pool.request()
     r.input('orgId', sql.UniqueIdentifier, auth.organizationId)
     r.input('userId', sql.UniqueIdentifier, auth.userId)
+    const projectScope = projectId
+      ? ' AND p.Id = @scopedProjectId'
+      : ''
+    if (projectId) r.input('scopedProjectId', sql.UniqueIdentifier, projectId)
     const cnt = await r.query<any>(`
       SELECT COUNT(*) c FROM (
         SELECT CAST(a.Id AS NVARCHAR(128)) _id
         FROM Archivos a INNER JOIN Proyectos p ON p.Id = a.IdProyecto
         WHERE p.IdOrganizacion = @orgId AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${projectScope}
         UNION ALL
         SELECT CAST(c.Id AS NVARCHAR(128)) _id
         FROM Carpetas c INNER JOIN Proyectos p ON p.Id = c.IdProyecto
         WHERE p.IdOrganizacion = @orgId AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${projectScope}
         UNION ALL
         SELECT CAST(p.Id AS NVARCHAR(128)) _id
         FROM Proyectos p
         WHERE p.IdOrganizacion = @orgId AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${projectScope}
         UNION ALL
         SELECT CAST(cm.Id AS NVARCHAR(128)) _id
         FROM Comentarios cm
@@ -50,6 +79,7 @@ async function fallbackFromEntities(
           INNER JOIN Usuarios u ON u.Id = cm.IdUsuario AND u.IdOrganizacion = @orgId
         WHERE ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${projectScope}
       ) X;
     `)
     const total = Number(cnt.recordset[0]?.c ?? 0)
@@ -58,6 +88,8 @@ async function fallbackFromEntities(
     r2.input('userId', sql.UniqueIdentifier, auth.userId)
     r2.input('off', sql.Int, Math.max(0, offset))
     r2.input('lim', sql.Int, Math.max(1, limit))
+    const scope2 = projectId ? ' AND p.Id = @scopedProjectId2' : ''
+    if (projectId) r2.input('scopedProjectId2', sql.UniqueIdentifier, projectId)
     const q = await r2.query<any>(`
       SELECT * FROM (
         SELECT CAST(a.Id AS NVARCHAR(128)) _id, 'file.subido' action, 'file' rt,
@@ -69,6 +101,7 @@ async function fallbackFromEntities(
         FROM Archivos a INNER JOIN Proyectos p ON p.Id = a.IdProyecto
         WHERE p.IdOrganizacion = @orgId AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${scope2}
         UNION ALL
         SELECT CAST(c.Id AS NVARCHAR(128)) _id, 'folder.creada' action, 'folder' rt,
                CAST(c.Id AS NVARCHAR(128)) rid, c.Nombre rname,
@@ -79,6 +112,7 @@ async function fallbackFromEntities(
         FROM Carpetas c INNER JOIN Proyectos p ON p.Id = c.IdProyecto
         WHERE p.IdOrganizacion = @orgId AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${scope2}
         UNION ALL
         SELECT CAST(p.Id AS NVARCHAR(128)) _id, 'project.creado' action, 'project' rt,
                CAST(p.Id AS NVARCHAR(128)) rid, p.Nombre rname,
@@ -89,6 +123,7 @@ async function fallbackFromEntities(
         FROM Proyectos p
         WHERE p.IdOrganizacion = @orgId AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${scope2}
         UNION ALL
         SELECT CAST(cm.Id AS NVARCHAR(128)) _id, 'file.comentado' action, 'file' rt,
                CAST(af.Id AS NVARCHAR(128)) rid,
@@ -106,6 +141,7 @@ async function fallbackFromEntities(
           INNER JOIN Usuarios u ON u.Id = cm.IdUsuario AND u.IdOrganizacion = @orgId
         WHERE ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
           AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId))
+          ${scope2}
       ) X
       ORDER BY fecha DESC
       OFFSET @off ROWS
@@ -171,25 +207,39 @@ function tryFromAuditoria(
   pool: Awaited<ReturnType<typeof getDbPool>>,
   auth: { organizationId: string; userId: string },
   pageSize: number,
-  offset: number
+  offset: number,
+  projectId?: string | null
 ): Promise<{ ok: true; items: ActivityItem[]; total: number } | { ok: false }> {
   return (async () => {
     const countQ = pool.request()
     countQ.input('orgId', sql.UniqueIdentifier, auth.organizationId)
     countQ.input('userId', sql.UniqueIdentifier, auth.userId)
-    const cnt = await countQ.query<{ c: number }>(`
+    let projectFilter = ''
+    if (projectId) {
+      countQ.input('pid', sql.UniqueIdentifier, projectId)
+      projectFilter = ' AND a.IdProyecto = @pid'
+    }
+    let cntSql = `
       SELECT COUNT(*) c FROM Auditoria a
       LEFT JOIN Archivos af ON a.TipoRecurso = 'file' AND af.Id = a.IdRecurso
       LEFT JOIN Carpetas cf ON a.TipoRecurso = 'folder' AND cf.Id = a.IdRecurso
       LEFT JOIN Proyectos pf ON a.TipoRecurso = 'project' AND pf.Id = a.IdRecurso
       LEFT JOIN Proyectos p ON p.Id = COALESCE(af.IdProyecto, cf.IdProyecto, pf.Id)
       WHERE a.IdOrganizacion = @orgId
+        ${projectFilter}
         AND (
           a.IdUsuario = @userId
           OR (p.Id IS NOT NULL AND ISNULL(p.Estado,'ACTIVO') <> 'ELIMINADO'
             AND (p.IdPropietario = @userId OR EXISTS (SELECT 1 FROM MiembrosProyecto mp WHERE mp.IdProyecto = p.Id AND mp.IdUsuario = @userId)))
         );
-    `)
+    `
+    if (projectId) {
+      cntSql = `
+        SELECT COUNT(*) c FROM Auditoria a
+        WHERE a.IdOrganizacion = @orgId AND a.IdProyecto = @pid;
+      `
+    }
+    const cnt = await countQ.query<{ c: number }>(cntSql)
     const totalAudit = Number(cnt.recordset[0]?.c ?? 0)
     if (totalAudit <= 0) throw new Error('no-audit')
     const r = pool.request()
@@ -197,7 +247,7 @@ function tryFromAuditoria(
     r.input('userId', sql.UniqueIdentifier, auth.userId)
     r.input('off', sql.Int, offset)
     r.input('pgsz', sql.Int, pageSize)
-    const aud = await r.query<any>(`
+    let audSql = `
       SELECT a.Id, a.Accion, a.TipoRecurso, a.IdRecurso, a.IdUsuario, a.Metadatos, a.FechaCreacion,
              u.NombreCompleto, u.Correo,
              CAST(COALESCE(af.IdProyecto, cf.IdProyecto, CASE WHEN a.TipoRecurso = 'project' THEN a.IdRecurso ELSE NULL END) AS NVARCHAR(128)) ResolvedProjectId
@@ -216,11 +266,25 @@ function tryFromAuditoria(
       ORDER BY a.FechaCreacion DESC
       OFFSET @off ROWS
       FETCH NEXT @pgsz ROWS ONLY;
-    `)
+    `
+    if (projectId) {
+      r.input('pid', sql.UniqueIdentifier, projectId)
+      audSql = `
+        SELECT a.Id, a.Accion, a.TipoRecurso, a.IdRecurso, a.IdUsuario, a.Metadatos, a.FechaCreacion,
+               u.NombreCompleto, u.Correo,
+               CAST(a.IdProyecto AS NVARCHAR(128)) ResolvedProjectId
+        FROM Auditoria a
+          LEFT JOIN Usuarios u ON u.Id = a.IdUsuario
+        WHERE a.IdOrganizacion = @orgId AND a.IdProyecto = @pid
+        ORDER BY a.FechaCreacion DESC
+        OFFSET @off ROWS
+        FETCH NEXT @pgsz ROWS ONLY;
+      `
+    }
+    const aud = await r.query<any>(audSql)
     const items: ActivityItem[] = (aud.recordset || []).map((row: any) => {
         const meta = parseMeta(row.Metadatos)
         const rt = row.TipoRecurso ? String(row.TipoRecurso).toLowerCase() : 'system'
-        const projectId = row.ResolvedProjectId ? String(row.ResolvedProjectId) : null
         const action = String(row.Accion)
         let resourceName: string | null = (meta.resourceName as any) ?? null
         const fn = (meta as any).fromName
@@ -234,7 +298,7 @@ function tryFromAuditoria(
           resourceType: rt,
           resourceId: row.IdRecurso ? String(row.IdRecurso) : null,
           resourceName,
-          projectId,
+          projectId: row.ResolvedProjectId ? String(row.ResolvedProjectId) : null,
           userId: row.IdUsuario ? String(row.IdUsuario) : null,
           userFullName: row.NombreCompleto ?? null,
           userEmail: row.Correo ?? null,
@@ -257,9 +321,15 @@ export async function listActivity(
     const page = Math.max(1, Number(req.query.page || 1))
     const pageSize = Math.max(1, Math.min(100, Number(req.query.pageSize ?? req.query.limit ?? 20)))
     const offset = (page - 1) * pageSize
+    const projectIdRaw = req.query.projectId ? String(req.query.projectId).trim() : null
+    const projectId = projectIdRaw && projectIdRaw.length > 0 ? projectIdRaw : null
     const pool = await getDbPool()
 
-    const aud = await tryFromAuditoria(pool, auth, pageSize, offset)
+    if (projectId) {
+      await ensureProjectAccess(pool, auth, projectId)
+    }
+
+    const aud = await tryFromAuditoria(pool, auth, pageSize, offset, projectId)
     if (aud.ok) {
       const totalPages = Math.max(1, Math.ceil(aud.total / pageSize))
       return res.status(200).json({
@@ -275,7 +345,7 @@ export async function listActivity(
       if ((action.endsWith('.copiado') || action.endsWith('.copiada')) && (m as any).copiedFrom && baseName) return `${baseName} (copia)`
       return baseName
     }
-    const fb = await fallbackFromEntities(pool, auth, pageSize, offset)
+    const fb = await fallbackFromEntities(pool, auth, pageSize, offset, projectId)
     const items: ActivityItem[] = (fb.items || []).map((x: any) => {
       const m = parseMeta((x as any).meta)
       const action = String((x as any).action || '')

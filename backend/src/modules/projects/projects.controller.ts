@@ -716,6 +716,7 @@ export async function removeProjectMemberEndpoint(
       resourceType: 'project',
       resourceId: projectId,
       resourceName: proj?.Nombre ?? null,
+      projectId,
       extra: {
         miembroId: memberId,
         usuarioRetirado: { id: targetUserId, nombre: targetUserName, email: targetUserEmail },
@@ -909,6 +910,7 @@ export async function patchDocumentoMaestroEndpoint(
       resourceType: 'project',
       resourceId: projectId,
       resourceName: before.projectName,
+      projectId,
       extra: {
         before: {
           resourceType: before.folderId ? 'FOLDER' : before.fileId ? 'FILE' : null,
@@ -989,6 +991,7 @@ export async function clearDocumentoMaestroEndpoint(
       resourceType: 'project',
       resourceId: projectId,
       resourceName: before.projectName,
+      projectId,
       extra: {
         before: {
           resourceType: before.folderId ? 'FOLDER' : before.fileId ? 'FILE' : null,

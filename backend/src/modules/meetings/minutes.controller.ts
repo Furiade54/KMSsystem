@@ -165,7 +165,8 @@ export async function createMeetingMinutes(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, minutesId },
+      projectId,
+      extra: { minutesId },
       req,
     })
 
@@ -212,7 +213,8 @@ export async function updateMeetingMinutes(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, minutesId },
+      projectId,
+      extra: { minutesId },
       req,
     })
     res.status(200).json({ success: true, data: mapMinutes(updated) })
@@ -246,7 +248,8 @@ export async function deleteMeetingMinutes(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, minutesId },
+      projectId,
+      extra: { minutesId },
       req,
     })
     res.status(204).send()

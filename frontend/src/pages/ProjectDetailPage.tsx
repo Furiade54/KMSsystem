@@ -56,6 +56,7 @@ import {
 import ConfirmReplaceActaModal from '../components/project/ConfirmReplaceActaModal'
 import ProjectTopicsTab from '../components/project/ProjectTopicsTab'
 import ProjectAportesTab from '../components/project/ProjectAportesTab'
+import ProjectActivityTab from '../components/project/ProjectActivityTab'
 import { useTopicForms } from '../components/project/project-topics/useTopicForms'
 import { useTopicItemForms } from '../components/project/project-topics/useTopicItemForms'
 import { useAporteForms } from '../components/project/project-aportes/useAporteForms'
@@ -2245,7 +2246,11 @@ function ProjectDetailPage() {
         />
       )}
 
-      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && activeTab !== 'topics' && activeTab !== 'contributions' && (
+      {activeTab === 'activity' && project && (
+        <ProjectActivityTab projectId={projectId} />
+      )}
+
+      {activeTab !== 'docs' && activeTab !== 'team' && activeTab !== 'master' && activeTab !== 'meetings' && activeTab !== 'topics' && activeTab !== 'contributions' && activeTab !== 'activity' && (
         <div className="flex-1 flex items-center justify-center text-center p-8 overflow-y-auto">
           <div className="text-muted-foreground">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-surface-secondary flex items-center justify-center mb-4">

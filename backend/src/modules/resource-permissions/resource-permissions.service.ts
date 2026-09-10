@@ -460,6 +460,7 @@ export async function upsertGrant(
       resourceType: 'PERMISO_RECURSO',
       resourceId: id,
       resourceName: `${apiType}:${meta.name}${userId ? `|u:${userId}` : `|r:${roleId}`}`,
+      projectId: meta.projectId,
       extra: {
         resourceType: apiType,
         resourceId,
@@ -556,6 +557,7 @@ export async function updateGrantById(
       resourceType: 'PERMISO_RECURSO',
       resourceId: permId,
       resourceName: meta ? `${current.resourceType}:${meta.name}` : current.id,
+      projectId: meta?.projectId ?? null,
       extra: {
         resourceType: current.resourceType,
         resourceId: current.resourceId,
@@ -603,6 +605,7 @@ export async function revokeGrantById(
       resourceType: 'PERMISO_RECURSO',
       resourceId: permId,
       resourceName: meta ? `${current.resourceType}:${meta.name}` : current.id,
+      projectId: meta?.projectId ?? null,
       extra: {
         resourceType: current.resourceType,
         resourceId: current.resourceId,

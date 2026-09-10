@@ -158,6 +158,7 @@ export async function createFolder(
       resourceType: 'folder',
       resourceId: newId,
       resourceName: name,
+      projectId: row.IdProyecto,
       extra: { parentId: parentId ? String(parentId) : null },
       req,
     })
@@ -243,6 +244,7 @@ export async function updateFolder(
         resourceType: 'folder',
         resourceId: id,
         resourceName: updated.Nombre,
+        projectId: updated.IdProyecto,
         extra: { fromName: oldFolderName, toName: updated.Nombre },
         req,
       })
@@ -255,6 +257,7 @@ export async function updateFolder(
         resourceType: 'folder',
         resourceId: id,
         resourceName: updated.Nombre,
+        projectId: updated.IdProyecto,
         extra: { fromParent: oldParentId, toParent: patchParentId ? String(patchParentId) : null },
         req,
       })
@@ -509,6 +512,7 @@ export async function copyFolder(
       resourceType: 'folder',
       resourceId: String(created.Id),
       resourceName: String(created.Nombre),
+      projectId: String(created.IdProyecto),
       extra: { copiedFrom: id, toParent: created.IdCarpetaPadre ? String(created.IdCarpetaPadre) : null },
       req,
     })

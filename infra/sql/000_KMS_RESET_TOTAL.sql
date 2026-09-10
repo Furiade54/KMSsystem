@@ -1048,6 +1048,7 @@ CREATE TABLE dbo.Auditoria (
     Id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Auditoria PRIMARY KEY DEFAULT NEWID(),
     IdOrganizacion UNIQUEIDENTIFIER NULL,
     IdUsuario UNIQUEIDENTIFIER NULL,
+    IdProyecto UNIQUEIDENTIFIER NULL,
     Accion VARCHAR(100) NOT NULL,
     TipoRecurso VARCHAR(50) NULL,
     IdRecurso UNIQUEIDENTIFIER NULL,
@@ -1065,6 +1066,10 @@ GO
 CREATE INDEX IX_Auditoria_IdOrganizacion_IdUsuario
     ON dbo.Auditoria(IdOrganizacion, IdUsuario, FechaCreacion DESC)
     INCLUDE (Accion, TipoRecurso, IdRecurso);
+GO
+
+CREATE INDEX IX_Auditoria_IdOrganizacion_IdProyecto_Fecha
+    ON dbo.Auditoria(IdOrganizacion, IdProyecto, FechaCreacion DESC);
 GO
 
 CREATE INDEX IX_Auditoria_FechaCreacion ON dbo.Auditoria(FechaCreacion DESC);
@@ -1259,10 +1264,12 @@ GO
 PRINT '==============================================';
 PRINT 'KMS recreado correctamente.';
 PRINT 'Base de datos: KMS';
-PRINT 'VERSION: Unificada v3.2 PRODUCCION (incorpora 002 Mejoras Usuarios + Favoritos + ' +
+PRINT 'VERSION: Unificada v3.4 PRODUCCION (incorpora 002 Mejoras Usuarios + Favoritos + ' +
       'Tablas ActividadReciente / SolicitudesPendientes + RBAC por ' +
       'codigo 33 permisos / PermisosRol / PermisosRecurso 14 cols + IX + UQ XOR + ' +
-      'MODULO APORTES PROYECTO (tabla AportesProyecto + puente ATV con Temas + 5 permisos RBAC Aportes))';
+      'MODULO VERSIONES ARCHIVO v3.3 (VersionesArchivo + IdVersionActual en Archivos) + ' +
+      'MODULO APORTES PROYECTO (AportesProyecto + AportesTemasVinculados M-N Temas + 5 permisos RBAC Aportes) + ' +
+      'MODULO ACTIVIDAD POR PROYECTO (Auditoria.IdProyecto desnormalizada + IX covering))';
 PRINT '';
 PRINT 'Usuarios semilla (PRODUCCION: CAMBIA SUS PASSWORDS INMEDIATAMENTE):';
 PRINT '  1) Administrador  — admin@kms.local          / Admin123456 (Rol: Administrador)  NivelPrioridad 10 = isOrgAdmin';
@@ -1271,10 +1278,11 @@ PRINT '  3) Carlos Pérez    — carlos.perez@ejemplo.com / Admin123456 (Rol: Mi
 PRINT '  4) Usuario ASD     — asd@kms.local            / Admin123456 (Rol: Miembro)';
 PRINT '';
 PRINT 'Matriz permisos por rol (seed):';
-PRINT '  • Administrador = 28 permisos (catalogo completo) — isOrgAdmin=true';
-PRINT '  • Miembro       = 10 permisos (org.ver, proyectos.ver/crear, revisiones.ver,';
+PRINT '  • Administrador = 33 permisos (catalogo completo) — isOrgAdmin=true';
+PRINT '  • Miembro       = 13 permisos (org.ver, proyectos.ver/crear, revisiones.ver,';
 PRINT '                                   archivos.ver/subir/editar, comentarios.crear,';
-PRINT '                                   favoritos.gestionar, recursos.permisos.ver)';
+PRINT '                                   favoritos.gestionar, recursos.permisos.ver,';
+PRINT '                                   aportes.ver, aportes.crear, aportes.editar)';
 PRINT '';
 PRINT 'NUEVOS ENDPOINTS RBAC DISPONIBLES (HTTP):';
 PRINT '  • /api/organizacion (GET org.ver / PATCH org.editar)';

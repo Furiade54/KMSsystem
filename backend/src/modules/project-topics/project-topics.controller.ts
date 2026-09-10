@@ -411,7 +411,8 @@ export async function createTopic(
       resourceType: 'topic',
       resourceId: topicId,
       resourceName: title,
-      extra: { projectId, order, status },
+      projectId,
+      extra: { order, status },
       req,
     })
     res.status(201).json({ success: true, data: mapTopic(row) })
@@ -480,7 +481,8 @@ export async function updateTopic(
       resourceType: 'topic',
       resourceId: topicId,
       resourceName: String(row.Titulo),
-      extra: { projectId, changes: sets.length },
+      projectId,
+      extra: { changes: sets.length },
       req,
     })
     res.status(200).json({ success: true, data: mapTopic(row) })
@@ -523,7 +525,7 @@ export async function deleteTopic(
       resourceType: 'topic',
       resourceId: topicId,
       resourceName: String(current.Titulo),
-      extra: { projectId },
+      projectId,
       req,
     })
     res.status(204).send()
@@ -745,7 +747,8 @@ export async function createTopicItem(
       resourceType: 'topic_item',
       resourceId: itemId,
       resourceName: title,
-      extra: { projectId, topicId, assignedCount: assignedMemberIds.length },
+      projectId,
+      extra: { topicId, assignedCount: assignedMemberIds.length },
       req,
     })
     res.status(201).json({ success: true, data: mapTopicItem(row, map) })
@@ -860,7 +863,8 @@ export async function updateTopicItem(
       resourceType: 'topic_item',
       resourceId: itemId,
       resourceName: String(row.Titulo),
-      extra: { projectId, topicId, changes: sets.length, membersChanged: patchMembers !== undefined },
+      projectId,
+      extra: { topicId, changes: sets.length, membersChanged: patchMembers !== undefined },
       req,
     })
     res.status(200).json({ success: true, data: mapTopicItem(row, map) })
@@ -897,7 +901,8 @@ export async function deleteTopicItem(
       resourceType: 'topic_item',
       resourceId: itemId,
       resourceName: String(current.Titulo),
-      extra: { projectId, topicId },
+      projectId,
+      extra: { topicId },
       req,
     })
     res.status(204).send()
@@ -1052,7 +1057,8 @@ export async function assignMemberToItem(
       resourceType: 'topic_item',
       resourceId: itemId,
       resourceName: projectMemberId,
-      extra: { projectId, topicId, assignmentId },
+      projectId,
+      extra: { topicId, assignmentId },
       req,
     })
     res.status(201).json({ success: true, data: mapTopicItemMember(rowQ.recordset[0]) })
@@ -1094,7 +1100,8 @@ export async function unassignMemberFromItem(
       resourceType: 'topic_item',
       resourceId: itemId,
       resourceName: assignmentId,
-      extra: { projectId, topicId },
+      projectId,
+      extra: { topicId },
       req,
     })
     res.status(204).send()

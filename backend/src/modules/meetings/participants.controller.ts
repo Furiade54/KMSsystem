@@ -191,7 +191,8 @@ export async function upsertMeetingParticipant(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, participantUserId: userId, attended: Boolean(row.Asistio) },
+      projectId,
+      extra: { participantUserId: userId, attended: Boolean(row.Asistio) },
       req,
     })
 
@@ -227,7 +228,8 @@ export async function removeMeetingParticipant(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, participantUserId: userId },
+      projectId,
+      extra: { participantUserId: userId },
       req,
     })
 
@@ -284,7 +286,8 @@ export async function setAttendance(
       resourceType: 'meeting',
       resourceId: meetingId,
       resourceName: meeting.Titulo,
-      extra: { projectId, participantUserId: userId, attended },
+      projectId,
+      extra: { participantUserId: userId, attended },
       req,
     })
 

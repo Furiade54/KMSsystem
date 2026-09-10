@@ -31,6 +31,7 @@ export async function ensureAuditAndCommentTables(): Promise<void> {
           Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
           IdOrganizacion UNIQUEIDENTIFIER,
           IdUsuario UNIQUEIDENTIFIER,
+          IdProyecto UNIQUEIDENTIFIER,
           Accion VARCHAR(100) NOT NULL,
           TipoRecurso VARCHAR(50),
           IdRecurso UNIQUEIDENTIFIER,
@@ -45,6 +46,20 @@ export async function ensureAuditAndCommentTables(): Promise<void> {
           CREATE NONCLUSTERED INDEX IX_Auditoria_Accion ON dbo.Auditoria(Accion);
         IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Auditoria_TipoRecurso_IdRecurso' AND object_id = OBJECT_ID('dbo.Auditoria'))
           CREATE NONCLUSTERED INDEX IX_Auditoria_TipoRecurso_IdRecurso ON dbo.Auditoria(TipoRecurso, IdRecurso);
+        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Auditoria_IdOrganizacion_IdUsuario' AND object_id = OBJECT_ID('dbo.Auditoria'))
+          CREATE NONCLUSTERED INDEX IX_Auditoria_IdOrganizacion_IdUsuario
+            ON dbo.Auditoria(IdOrganizacion, IdUsuario, FechaCreacion DESC) INCLUDE (Accion, TipoRecurso, IdRecurso);
+        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Auditoria_IdOrganizacion_IdProyecto_Fecha' AND object_id = OBJECT_ID('dbo.Auditoria'))
+          CREATE NONCLUSTERED INDEX IX_Auditoria_IdOrganizacion_IdProyecto_Fecha
+            ON dbo.Auditoria(IdOrganizacion, IdProyecto, FechaCreacion DESC);
+      END
+      ELSE
+      BEGIN
+        IF COL_LENGTH('dbo.Auditoria', 'IdProyecto') IS NULL
+          ALTER TABLE dbo.Auditoria ADD IdProyecto UNIQUEIDENTIFIER NULL;
+        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Auditoria_IdOrganizacion_IdProyecto_Fecha' AND object_id = OBJECT_ID('dbo.Auditoria'))
+          CREATE NONCLUSTERED INDEX IX_Auditoria_IdOrganizacion_IdProyecto_Fecha
+            ON dbo.Auditoria(IdOrganizacion, IdProyecto, FechaCreacion DESC);
       END
     `)
     ensured = true
@@ -77,6 +92,7 @@ export async function logAuditRecord(params: {
   resourceType: string
   resourceId: string | null
   resourceName?: string | null
+  projectId?: string | null
   extra?: Record<string, unknown> | null
   req?: Request | null
 }): Promise<void> {
@@ -85,6 +101,7 @@ export async function logAuditRecord(params: {
     const pool = await getDbPool()
     const metadataRaw: Record<string, unknown> = {
       ...(params.resourceName != null ? { resourceName: String(params.resourceName) } : {}),
+      ...(params.projectId != null ? { projectId: String(params.projectId) } : {}),
       ...(params.extra ?? {}),
     }
     const metadataStr = Object.keys(metadataRaw).length > 0 ? JSON.stringify(metadataRaw) : null
@@ -92,6 +109,7 @@ export async function logAuditRecord(params: {
     const q = pool.request()
     q.input('orgId', sql.UniqueIdentifier, params.organizationId)
     q.input('userId', sql.UniqueIdentifier, params.userId)
+    q.input('projectId', sql.UniqueIdentifier, params.projectId ?? null)
     q.input('accion', sql.VarChar(100), String(params.action ?? '').slice(0, 100))
     q.input('tipo', sql.VarChar(50), String(params.resourceType ?? '').slice(0, 50) || null)
     q.input('rid', sql.UniqueIdentifier, params.resourceId || null)
@@ -99,8 +117,8 @@ export async function logAuditRecord(params: {
     q.input('ua', sql.NVarChar(500), trace.ua ? trace.ua.slice(0, 500) : null)
     q.input('meta', sql.NVarChar(sql.MAX), metadataStr)
     await q.query(`
-      INSERT INTO Auditoria (IdOrganizacion, IdUsuario, Accion, TipoRecurso, IdRecurso, Ip, AgenteUsuario, Metadatos)
-      VALUES (@orgId, @userId, @accion, @tipo, @rid, @ip, @ua, @meta);
+      INSERT INTO Auditoria (IdOrganizacion, IdUsuario, IdProyecto, Accion, TipoRecurso, IdRecurso, Ip, AgenteUsuario, Metadatos)
+      VALUES (@orgId, @userId, @projectId, @accion, @tipo, @rid, @ip, @ua, @meta);
     `)
   } catch {
     /* auditoría es best-effort; nunca debe romper el flujo principal */

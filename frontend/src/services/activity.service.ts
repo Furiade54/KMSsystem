@@ -26,12 +26,13 @@ export interface ActivityResponse {
   source: 'auditoria' | 'fallback'
 }
 
-export async function fetchActivity(params?: { limit?: number; page?: number; pageSize?: number }) {
+export async function fetchActivity(params?: { limit?: number; page?: number; pageSize?: number; projectId?: string | null }) {
   const query = new URLSearchParams()
   if (params?.page) query.set('page', String(params.page))
   if (params?.pageSize) query.set('pageSize', String(params.pageSize))
   // backwards compat: si vienen limit sin pageSize, mandar limit por si acaso el backend es viejo
   if (params?.limit && !params?.pageSize) query.set('limit', String(params.limit))
+  if (params?.projectId) query.set('projectId', String(params.projectId))
   const qs = query.toString()
   const res = await api.get<ApiResponse<ActivityResponse>>(`/actividad${qs ? `?${qs}` : ''}`)
   if (!res.data?.success) {

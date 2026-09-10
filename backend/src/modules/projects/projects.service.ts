@@ -246,6 +246,7 @@ export async function permanentlyDeleteProject(
     resourceType: 'project',
     resourceId: projectId,
     resourceName: projectName || null,
+    projectId,
     extra: {
       deletedFilesCount: storageKeys.length,
       deletedGrantsCount: deletedGrants,

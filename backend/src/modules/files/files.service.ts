@@ -243,6 +243,7 @@ export async function uploadFile(
     resourceType: 'file',
     resourceId: id,
     resourceName: name,
+    projectId: body.projectId,
     extra: { folderId: body.folderId ? String(body.folderId) : null, sizeBytes: Number(file.size || 0), versionId: vId ? String(vId) : undefined },
     req: opts?.req ?? null,
   })
@@ -519,6 +520,7 @@ export async function updateFileById(
       resourceType: 'file',
       resourceId: id,
       resourceName: finalName,
+      projectId: finalRow.IdProyecto,
       extra: { fromName: oldName, toName: finalName },
       req: opts?.req ?? null,
     })
@@ -531,6 +533,7 @@ export async function updateFileById(
       resourceType: 'file',
       resourceId: id,
       resourceName: finalName,
+      projectId: finalRow.IdProyecto,
       extra: { fromFolder: r.IdCarpeta ? String(r.IdCarpeta) : null, toFolder: patchFolderId ? String(patchFolderId) : null },
       req: opts?.req ?? null,
     })
@@ -680,6 +683,7 @@ export async function copyFileById(
     resourceType: 'file',
     resourceId: newId,
     resourceName: baseName,
+    projectId,
     extra: { copiedFrom: String(src.Id), toFolder: targetFolderId ? String(targetFolderId) : null, versionId: vId ? String(vId) : undefined },
     req: callOpts?.req ?? null,
   })
@@ -878,6 +882,7 @@ export async function uploadNewVersion(
     resourceType: 'file',
     resourceId: fileId,
     resourceName: String(a.Nombre),
+    projectId: a.IdProyecto,
     extra: { versionId: vId, versionNumber: num, sizeBytes: Number(file.size || putResult.sizeBytes || 0) },
     req: opts?.req ?? null,
   })
@@ -949,6 +954,7 @@ export async function setCurrentFileVersion(
     resourceType: 'file',
     resourceId: fileId,
     resourceName: String(finalRow.Nombre),
+    projectId: finalRow.IdProyecto,
     extra: { versionId },
     req: opts?.req ?? null,
   })
@@ -1012,6 +1018,7 @@ export async function deleteFileVersion(
       resourceType: 'file',
       resourceId: fileId,
       resourceName: String(r.Nombre),
+      projectId: r.IdProyecto,
       extra: { versionId, versionNumber: Number(r.VNumeroVersion), wasCurrent: isCurrent },
       req: opts?.req ?? null,
     })
@@ -1094,6 +1101,7 @@ export async function commentFileById(
     resourceType: 'file',
     resourceId: id,
     resourceName: fileName,
+    projectId,
     extra: {
       commentId: newId,
       comment: truncateForActivity(content, 280),
@@ -1200,6 +1208,7 @@ export async function updateFileCommentById(
     resourceType: 'file',
     resourceId: fileId,
     resourceName: String(f.recordset[0].Nombre),
+    projectId,
     extra: { commentId, byOwner: String(c.IdUsuario) === auth.userId ? 'owner' : 'gestor', managed: canManage },
     req: opts?.req ?? null,
   })
@@ -1238,7 +1247,7 @@ export async function deleteFileCommentById(
   logAuditRecord({
     organizationId: auth.organizationId, userId: auth.userId,
     action: 'file.comentario.eliminado', resourceType: 'file', resourceId: fileId,
-    resourceName: String(f.recordset[0].Nombre), extra: { commentId },
+    resourceName: String(f.recordset[0].Nombre), projectId, extra: { commentId },
     req: opts?.req ?? null,
   })
 }

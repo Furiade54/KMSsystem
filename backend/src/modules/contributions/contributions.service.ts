@@ -354,8 +354,8 @@ export async function createContribution(
     await logAuditRecord({
       organizationId: auth.organizationId, userId: auth.userId,
       action: 'APORTE.CREAR', resourceType: 'contribution', resourceId: newId,
-      resourceName: body.title ?? null,
-      extra: { projectId: body.projectId, type, topicCount: body.topicIds?.length ?? 0 },
+      resourceName: body.title ?? null, projectId: body.projectId,
+      extra: { type, topicCount: body.topicIds?.length ?? 0 },
       req: opts?.req ?? null,
     })
     return getContribution(auth, { projectId: body.projectId, contributionId: newId })
@@ -461,8 +461,7 @@ export async function updateContribution(
   await logAuditRecord({
     organizationId: auth.organizationId, userId: auth.userId,
     action: 'APORTE.EDITAR', resourceType: 'contribution', resourceId: input.contributionId,
-    resourceName: b.title ?? current.Titulo ?? null,
-    extra: { projectId: input.projectId },
+    resourceName: b.title ?? current.Titulo ?? null, projectId: input.projectId,
     req: opts?.req ?? null,
   })
   return getContribution(auth, { projectId: input.projectId, contributionId: input.contributionId })
@@ -524,8 +523,7 @@ export async function deleteContribution(
     organizationId: auth.organizationId, userId: auth.userId,
     action: input.permanent ? 'APORTE.ELIMINAR_PERMANENTE' : 'APORTE.ELIMINAR',
     resourceType: 'contribution', resourceId: input.contributionId,
-    resourceName: current.Titulo ?? null,
-    extra: { projectId: input.projectId },
+    resourceName: current.Titulo ?? null, projectId: input.projectId,
     req: opts?.req ?? null,
   })
 }
@@ -564,8 +562,8 @@ export async function linkTopicToContribution(
   await logAuditRecord({
     organizationId: auth.organizationId, userId: auth.userId,
     action: 'APORTE.VINCULAR_TEMA', resourceType: 'contribution', resourceId: input.contributionId,
-    resourceName: current.Titulo ?? null,
-    extra: { projectId: input.projectId, topicId: input.topicId, topicTitle: v?.Titulo ?? null },
+    resourceName: current.Titulo ?? null, projectId: input.projectId,
+    extra: { topicId: input.topicId, topicTitle: v?.Titulo ?? null },
     req: opts?.req ?? null,
   })
   return {
@@ -602,8 +600,8 @@ export async function unlinkTopicFromContribution(
   await logAuditRecord({
     organizationId: auth.organizationId, userId: auth.userId,
     action: 'APORTE.DESVINCULAR_TEMA', resourceType: 'contribution', resourceId: input.contributionId,
-    resourceName: current.Titulo ?? null,
-    extra: { projectId: input.projectId, topicId: input.topicId },
+    resourceName: current.Titulo ?? null, projectId: input.projectId,
+    extra: { topicId: input.topicId },
     req: opts?.req ?? null,
   })
 }
