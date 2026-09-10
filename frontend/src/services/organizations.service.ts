@@ -32,10 +32,35 @@ export interface ListOrganizationsParams {
   includeDeleted?: boolean
 }
 
+export type OrgDeleteBlock = {
+  kind: 'info' | 'action'
+  title: string
+  items: string[]
+}
+
+export type OrgDeleteFailure = {
+  title?: string
+  summary?: string
+  blocks?: OrgDeleteBlock[]
+  rawHint?: string
+}
+
 export function extractOrgError(err: any, fallback: string): string {
   const data = err?.response?.data
   const detail = data?.error ? ` · ${String(data.error)}` : ''
   return (data?.message || err?.message || fallback) + detail
+}
+
+export function extractOrgFailure(err: any): OrgDeleteFailure | null {
+  const details = err?.response?.data?.details
+  if (!details) return null
+  const blocks = Array.isArray(details.blocks) ? details.blocks as OrgDeleteBlock[] : []
+  return {
+    title: details.title ? String(details.title) : undefined,
+    summary: details.summary ? String(details.summary) : undefined,
+    blocks,
+    rawHint: details.rawHint ? String(details.rawHint) : undefined,
+  }
 }
 
 function buildError(payload: any, fallback: string): string {

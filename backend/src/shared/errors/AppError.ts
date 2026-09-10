@@ -2,13 +2,15 @@ export class AppError extends Error {
   public readonly statusCode: number
   public readonly isOperational: boolean
   public readonly errors?: Record<string, string[]>
+  public readonly details?: unknown
 
-  constructor(message: string, statusCode: number = 500, errors?: Record<string, string[]>) {
+  constructor(message: string, statusCode: number = 500, errors?: Record<string, string[]>, details?: unknown) {
     super(message)
     Object.setPrototypeOf(this, new.target.prototype)
     this.statusCode = statusCode
     this.isOperational = statusCode < 500
     this.errors = errors
+    this.details = details
     Error.captureStackTrace(this)
   }
 }
@@ -38,7 +40,7 @@ export class BadRequestError extends AppError {
 }
 
 export class ConflictError extends AppError {
-  constructor(message = 'Conflicto') {
-    super(message, 409)
+  constructor(message = 'Conflicto', errors?: Record<string, string[]>, details?: unknown) {
+    super(message, 409, errors, details)
   }
 }

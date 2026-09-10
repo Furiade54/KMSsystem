@@ -18,6 +18,8 @@ import {
   Filter,
   AlertTriangle,
   Trash,
+  Info,
+  Lightbulb,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -31,6 +33,8 @@ import {
   permanentlyDeleteOrganization,
   orgStatusInfo,
   extractOrgError,
+  extractOrgFailure,
+  type OrgDeleteFailure,
 } from '../services/organizations.service'
 import type { EntityStatus, CreateOrganizationDto, UpdateOrganizationDto, PaginatedResult } from '../../../packages/shared-types/src'
 import { useAuthStore } from '../store/authStore'
@@ -51,6 +55,7 @@ type ConfirmDeleteTarget =
   | { org: ApiOrganization; permanent: true }
   | { org: ApiOrganization; permanent: false }
   | null
+type DeleteBlockedModalState = { failure: OrgDeleteFailure; fallback: string; permanent: boolean } | null
 
 function initialsOf(name: string | null) {
   if (!name || !name.trim()) return '??'
@@ -130,6 +135,7 @@ function OrganizationsPage() {
 
   const [editTarget, setEditTarget] = useState<EditOrgTarget>(null)
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteTarget>(null)
+  const [blockedDelete, setBlockedDelete] = useState<DeleteBlockedModalState>(null)
   const [actionMenu, setActionMenu] = useState<string | null>(null)
 
   const createMutation = useMutation({
@@ -158,7 +164,14 @@ function OrganizationsPage() {
       queryClient.invalidateQueries({ queryKey: ['organizations', 'list'] })
       setConfirmDelete(null)
     },
-    onError: (err: any) => alert(extractOrgError(err, 'No se pudo eliminar la organización')),
+    onError: (err: any) => {
+      const structured = extractOrgFailure(err)
+      if (structured) {
+        setBlockedDelete({ failure: structured, fallback: 'No se pudo eliminar la organización', permanent: false })
+      } else {
+        alert(extractOrgError(err, 'No se pudo eliminar la organización'))
+      }
+    },
   })
 
   const permanentDeleteMutation = useMutation({
@@ -167,7 +180,14 @@ function OrganizationsPage() {
       queryClient.invalidateQueries({ queryKey: ['organizations', 'list'] })
       setConfirmDelete(null)
     },
-    onError: (err: any) => alert(extractOrgError(err, 'No se pudo eliminar permanentemente la organización')),
+    onError: (err: any) => {
+      const structured = extractOrgFailure(err)
+      if (structured) {
+        setBlockedDelete({ failure: structured, fallback: 'No se pudo eliminar permanentemente la organización', permanent: true })
+      } else {
+        alert(extractOrgError(err, 'No se pudo eliminar permanentemente la organización'))
+      }
+    },
   })
 
   function closeActions() { setActionMenu(null) }
@@ -481,6 +501,15 @@ function OrganizationsPage() {
           }
         />
       )}
+
+      {blockedDelete && (
+        <DeleteBlockedModal
+          failure={blockedDelete.failure}
+          fallbackMessage={blockedDelete.fallback}
+          permanent={blockedDelete.permanent}
+          onClose={() => setBlockedDelete(null)}
+        />
+      )}
     </div>
   )
 }
@@ -720,6 +749,91 @@ function ConfirmDeleteModal({
             {pending && <Loader2 className="w-4 h-4 animate-spin" />}
             {pending ? 'Procesando…' : btnLabel}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeleteBlockedModal({
+  failure, fallbackMessage, permanent, onClose,
+}: {
+  failure: OrgDeleteFailure
+  fallbackMessage: string
+  permanent: boolean
+  onClose: () => void
+}) {
+  const title = failure.title || (permanent ? 'No se puede eliminar la organización' : 'No se puede mover a papelera')
+  const summary = failure.summary || fallbackMessage
+  const blocks = failure.blocks ?? []
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="card w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3 p-4 border-b border-border">
+          <div className="w-10 h-10 shrink-0 rounded-xl bg-destructive/15 text-destructive flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-foreground">{title}</h3>
+            <p className="text-sm text-muted-foreground mt-1">{summary}</p>
+          </div>
+          <button className="btn-icon text-muted-foreground hover:text-foreground" onClick={onClose} aria-label="Cerrar">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {blocks.length > 0 && (
+          <div className="p-4 space-y-3 max-h-[55vh] overflow-y-auto">
+            {blocks.map((b, idx) => {
+              const isInfo = b.kind === 'info'
+              const Icon = isInfo ? Info : Lightbulb
+              const toneClass = isInfo
+                ? 'bg-brand-500/10 border-brand-500/30 text-foreground'
+                : 'bg-amber-500/10 border-amber-500/40 text-foreground'
+              const iconClass = isInfo ? 'text-brand-600 dark:text-brand-300' : 'text-amber-600 dark:text-amber-300'
+              return (
+                <div
+                  key={`bk-${idx}`}
+                  className={clsx(
+                    'rounded-md border px-3 py-2.5',
+                    toneClass
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <Icon className={clsx('w-4 h-4 shrink-0 mt-0.5', iconClass)} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold">{b.title}</p>
+                      {b.items && b.items.length > 0 && (
+                        <ul className="mt-1.5 space-y-1 pl-0.5">
+                          {b.items.map((it, i) => (
+                            <li
+                              key={`bk-${idx}-${i}`}
+                              className="text-xs text-foreground/90 list-disc marker:text-muted-foreground/60 ml-3"
+                            >
+                              {it}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
+            {failure.rawHint && (
+              <details className="mt-2 text-[11px] text-muted-foreground select-none">
+                <summary className="cursor-pointer hover:text-foreground">Detalles técnicos</summary>
+                <p className="mt-1.5 p-2 rounded border border-border bg-surface-secondary/50 whitespace-pre-wrap break-words font-mono leading-snug">
+                  {failure.rawHint}
+                </p>
+              </details>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 p-3 border-t border-border">
+          <button className="btn-primary text-sm" onClick={onClose}>Entendido</button>
         </div>
       </div>
     </div>

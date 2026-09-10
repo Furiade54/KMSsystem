@@ -9,11 +9,12 @@ export function notFoundHandler(req: Request, _res: Response, next: NextFunction
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (err instanceof AppError) {
-    const body: ApiResponse<null> = {
+    const body: ApiResponse<null> & { details?: unknown } = {
       success: false,
       message: err.message,
       error: err.message,
       errors: err.errors,
+      details: err.details ?? undefined,
     }
     return res.status(err.statusCode).json(body)
   }

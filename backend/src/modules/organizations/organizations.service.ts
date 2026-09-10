@@ -25,6 +25,134 @@ const STATUS_EN_TO_ES: Record<string, string> = {
   DELETED: 'ELIMINADO',
 }
 
+type OrgDeleteBlock = {
+  kind: 'info' | 'action'
+  title: string
+  items: string[]
+}
+
+const FK_BLOCKER_MAP: Array<{
+  pattern: RegExp
+  label: string
+  itemPrefix: string
+  tableResolver: string
+  userColumn: string
+  whereScope: '@orgId'
+}> = [
+  // (resuelto en cleanup, se mantiene por retrocompatibilidad del detector)
+  {
+    pattern: /FK_RTV_Vinculante|ReunionesTemasVinculados.*IdUsuarioVinculante/i,
+    label: 'Usuarios que vincularon temas a reuniones',
+    itemPrefix: 'Usuario con historial de vinculación',
+    tableResolver: 'dbo.ReunionesTemasVinculados',
+    userColumn: 'IdUsuarioVinculante',
+    whereScope: '@orgId',
+  },
+  {
+    pattern: /FK_ATV_Vinculante|AportesTemasVinculados.*IdUsuarioVinculante/i,
+    label: 'Usuarios que vincularon temas a aportes',
+    itemPrefix: 'Usuario con historial de vinculación en aportes',
+    tableResolver: 'dbo.AportesTemasVinculados',
+    userColumn: 'IdUsuarioVinculante',
+    whereScope: '@orgId',
+  },
+]
+
+function detectFkViolationFromMessage(message: string): string | null {
+  for (const entry of FK_BLOCKER_MAP) {
+    if (entry.pattern.test(message)) return entry.label
+  }
+  const m = message.match(/REFERENCE\s+constraint\s+"?([^"\s]+)"?/i)
+  if (m?.[1]) return `Restricción de integridad (${m[1]})`
+  return null
+}
+
+async function buildOrgDeleteBlockers(
+  pool: ConnectionPool | { request: () => Request },
+  orgId: string
+): Promise<OrgDeleteBlock[]> {
+  const blocks: OrgDeleteBlock[] = []
+  const req = pool.request()
+  req.input('orgId', sql.UniqueIdentifier, orgId)
+
+  const counts = await req.query<{
+    rtvUsers: number
+    atvUsers: number
+    projectTopics: number
+    reuniones: number
+    aportes: number
+  }>(`
+    SELECT
+      (SELECT COUNT(DISTINCT IdUsuarioVinculante) FROM dbo.ReunionesTemasVinculados rtv
+         INNER JOIN dbo.Usuarios u ON u.Id = rtv.IdUsuarioVinculante WHERE u.IdOrganizacion = @orgId) AS rtvUsers,
+      (SELECT COUNT(DISTINCT IdUsuarioVinculante) FROM dbo.AportesTemasVinculados atv
+         INNER JOIN dbo.Usuarios u ON u.Id = atv.IdUsuarioVinculante WHERE u.IdOrganizacion = @orgId) AS atvUsers,
+      (SELECT COUNT(*) FROM dbo.TemasProyecto t WHERE t.IdProyecto IN (SELECT Id FROM dbo.Proyectos WHERE IdOrganizacion = @orgId)) AS projectTopics,
+      (SELECT COUNT(*) FROM dbo.Reuniones r WHERE r.IdProyecto IN (SELECT Id FROM dbo.Proyectos WHERE IdOrganizacion = @orgId)) AS reuniones,
+      (SELECT COUNT(*) FROM dbo.AportesProyecto a WHERE a.IdOrganizacion = @orgId) AS aportes;
+  `)
+  const row = counts.recordset[0]
+  const infoItems: string[] = []
+  if ((row?.reuniones ?? 0) > 0) infoItems.push(`${row.reuniones} reunione(s) y su historial de temas vinculados`)
+  if ((row?.aportes ?? 0) > 0) infoItems.push(`${row.aportes} aporte(s) y sus vinculaciones a temas`)
+  if ((row?.projectTopics ?? 0) > 0) infoItems.push(`${row.projectTopics} tema(s) de proyecto con items y asignaciones`)
+  if ((row?.rtvUsers ?? 0) > 0) infoItems.push(`${row.rtvUsers} usuario(s) que vincularon temas a reuniones`)
+  if ((row?.atvUsers ?? 0) > 0) infoItems.push(`${row.atvUsers} usuario(s) que vincularon temas a aportes`)
+  if (infoItems.length > 0) {
+    blocks.push({
+      kind: 'info',
+      title: 'Contenido que se va a eliminar definitivamente',
+      items: infoItems,
+    })
+  }
+
+  const actions: string[] = []
+  if ((row?.rtvUsers ?? 0) + (row?.atvUsers ?? 0) > 0) {
+    actions.push('La limpieza automática se ejecuta en cascada con la organización. Si el error persiste, contacta al administrador.')
+  }
+  if (actions.length > 0) {
+    blocks.push({
+      kind: 'action',
+      title: 'Recomendación',
+      items: actions,
+    })
+  }
+  return blocks
+}
+
+async function tryResolveOrgConflictAfterFkError(
+  pool: ConnectionPool,
+  actorAuth: { organizationId: string; userId: string },
+  orgId: string,
+  originalErrMsg: string,
+  req?: ExpressRequest | null
+): Promise<void> {
+  const blockerLabel = detectFkViolationFromMessage(originalErrMsg)
+  const blockers = await buildOrgDeleteBlockers(pool, orgId)
+  const summary = blockerLabel
+    ? `No se pudo eliminar la organización porque existen datos vinculados: ${blockerLabel}.`
+    : 'No se pudo eliminar la organización porque hay datos que aún la referencian.'
+  const details = {
+    title: 'No se puede eliminar la organización',
+    summary,
+    blocks: blockers,
+    rawHint: originalErrMsg && originalErrMsg.length < 400 ? originalErrMsg : undefined,
+  }
+  const err = new ConflictError(summary, undefined, details) as any
+  try {
+    await logAuditRecord({
+      organizationId: actorAuth.organizationId,
+      userId: actorAuth.userId,
+      action: 'ORG_DELETE_FAILED_FK',
+      resourceType: 'ORGANIZATION',
+      resourceId: orgId,
+      extra: { blockerLabel, raw: originalErrMsg },
+      req: req ?? null,
+    })
+  } catch {}
+  throw err
+}
+
 function mapStatus(es: unknown): EntityStatus {
   const key = String(es || 'ACTIVO').toUpperCase()
   return STATUS_ES_TO_EN[key] ?? 'ACTIVE'
@@ -355,11 +483,41 @@ export async function permanentlyDeleteOrganization(
       UPDATE dbo.Reuniones SET IdCreador = NULL WHERE IdCreador IN (SELECT Id FROM @UserIds);
       UPDATE dbo.ActasReunion SET IdCreador = NULL WHERE IdCreador IN (SELECT Id FROM @UserIds);
       UPDATE dbo.RecursosExternos SET IdCreador = NULL WHERE IdCreador IN (SELECT Id FROM @UserIds);
+      UPDATE dbo.PermisosRecurso SET IdConcedidoPor = NULL WHERE IdConcedidoPor IN (SELECT Id FROM @UserIds);
+      UPDATE dbo.AportesProyecto SET IdArchivoAdjunto = NULL WHERE IdOrganizacion = @orgId;
+      UPDATE dbo.Archivos SET IdVersionActual = NULL WHERE IdProyecto IN (SELECT Id FROM @ProjectIds);
 
       -- Eliminar dependencias que referencian a proyectos/archivos de la org
       DELETE FROM dbo.Compartidos WHERE (IdRecurso IN (SELECT Id FROM @ProjectIds) AND TipoRecurso = 'PROJECT')
         OR (IdRecurso IN (SELECT Id FROM dbo.Carpetas WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)) AND TipoRecurso = 'FOLDER')
         OR (IdRecurso IN (SELECT Id FROM dbo.Archivos WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)) AND TipoRecurso = 'FILE');
+
+      -- Eliminar dependencias polimórficas por recurso en PermisosRecurso
+      DELETE pr FROM dbo.PermisosRecurso pr
+        WHERE (pr.TipoRecurso = 'PROJECT' AND pr.IdRecurso IN (SELECT Id FROM @ProjectIds))
+           OR (pr.TipoRecurso = 'FOLDER' AND pr.IdRecurso IN (SELECT Id FROM dbo.Carpetas WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)))
+           OR (pr.TipoRecurso = 'FILE' AND pr.IdRecurso IN (SELECT Id FROM dbo.Archivos WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)))
+           OR (pr.TipoRecurso = 'MEETING' AND pr.IdRecurso IN (SELECT Id FROM dbo.Reuniones WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)))
+           OR (pr.TipoRecurso = 'TOPIC' AND pr.IdRecurso IN (SELECT Id FROM dbo.TemasProyecto WHERE IdProyecto IN (SELECT Id FROM @ProjectIds)))
+           OR (pr.TipoRecurso = 'APORTE' AND pr.IdRecurso IN (SELECT Id FROM dbo.AportesProyecto WHERE IdOrganizacion = @orgId));
+
+      -- ReunionesTemasVinculados (FK_RTV_Tema y FK_RTV_Vinculante NO_ACTION => borrar antes que TemasProyecto/Usuarios)
+      DELETE rtv FROM dbo.ReunionesTemasVinculados rtv
+        WHERE rtv.IdReunion IN (SELECT Id FROM dbo.Reuniones WHERE IdProyecto IN (SELECT Id FROM @ProjectIds))
+           OR rtv.IdTema IN (SELECT Id FROM dbo.TemasProyecto WHERE IdProyecto IN (SELECT Id FROM @ProjectIds))
+           OR rtv.IdUsuarioVinculante IN (SELECT Id FROM @UserIds);
+
+      -- AportesTemasVinculados (FK_ATV_Tema NO_ACTION => borrar antes que TemasProyecto)
+      DELETE atv FROM dbo.AportesTemasVinculados atv
+        WHERE atv.IdAporte IN (SELECT Id FROM dbo.AportesProyecto WHERE IdOrganizacion = @orgId)
+           OR atv.IdTema IN (SELECT Id FROM dbo.TemasProyecto WHERE IdProyecto IN (SELECT Id FROM @ProjectIds));
+
+      DELETE ap FROM dbo.AportesProyecto ap WHERE ap.IdOrganizacion = @orgId;
+
+      -- TemasProyectoItems (FK NO_ACTION en TemasProyectoItemMiembros => borrar antes items que temas)
+      DELETE tpi FROM dbo.TemasProyectoItems tpi
+        INNER JOIN dbo.TemasProyecto t ON t.Id = tpi.IdTema
+      WHERE t.IdProyecto IN (SELECT Id FROM @ProjectIds);
 
       -- TemasProyectoItemMiembros (ambas FK NO_ACTION por multiple-cascade-path SQL Server)
       DELETE tim FROM dbo.TemasProyectoItemMiembros tim
@@ -385,7 +543,7 @@ export async function permanentlyDeleteOrganization(
       DELETE FROM dbo.Notificaciones WHERE IdUsuario IN (SELECT Id FROM @UserIds);
       DELETE FROM dbo.ActividadReciente WHERE IdOrganizacion = @orgId;
       DELETE FROM dbo.SolicitudesPendientes WHERE IdUsuario IN (SELECT Id FROM @UserIds);
-      DELETE FROM dbo.SolicitudesAcceso WHERE IdPropietario IN (SELECT Id FROM @UserIds);
+      DELETE FROM dbo.SolicitudesAcceso WHERE IdPropietario IN (SELECT Id FROM @UserIds) OR IdSolicitante IN (SELECT Id FROM @UserIds);
       DELETE FROM dbo.RolesUsuario WHERE IdOrganizacion = @orgId OR IdUsuario IN (SELECT Id FROM @UserIds) OR IdRol IN (SELECT Id FROM @RoleIds);
       DELETE FROM dbo.Roles WHERE IdOrganizacion = @orgId;
       DELETE FROM dbo.Usuarios WHERE IdOrganizacion = @orgId;
@@ -398,6 +556,12 @@ export async function permanentlyDeleteOrganization(
     await tx.commit()
   } catch (e) {
     try { await tx.rollback() } catch { /* ignore */ }
+    const msg = e instanceof Error ? e.message : String(e)
+    const isFk = /REFERENCE\s+constraint|conflicted with the/i.test(msg)
+    if (isFk) {
+      await tryResolveOrgConflictAfterFkError(pool, actorAuth, orgId, msg, req ?? null)
+      return
+    }
     throw e
   }
 
