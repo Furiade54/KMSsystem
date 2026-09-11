@@ -28,8 +28,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = 'Acceso denegado') {
-    super(message, 403)
+  constructor(message = 'Acceso denegado', errors?: Record<string, string[]>, details?: unknown) {
+    super(message, 403, errors, details)
   }
 }
 

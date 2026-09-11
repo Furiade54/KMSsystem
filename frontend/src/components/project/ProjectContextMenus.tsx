@@ -1,7 +1,7 @@
 import React from 'react'
 import {
   FolderOpen, Edit3, ArrowRightLeft, Star, XCircle, Loader2,
-  FileCheck2, Trash2, FileText, MessageCircle, FolderPlus, Upload,
+  FileCheck2, Trash2, FileText, MessageCircle, FolderPlus, Upload, ShieldAlert,
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { ApiFolder } from '@/services/folders.service'
@@ -206,6 +206,8 @@ export type FileContextMenuProps = {
   clearPending: boolean
   deletePending: boolean
   deletingId: string | undefined
+  authUserId?: string | null
+  projectOwnerId?: string | null
 }
 
 export function FileContextMenu(props: FileContextMenuProps) {
@@ -216,10 +218,20 @@ export function FileContextMenu(props: FileContextMenuProps) {
     onToggleFavorite, isLocalFavorite,
     onClearMaster, onDesignateMasterFile, onDelete,
     designatePending, clearPending, deletePending, deletingId,
+    authUserId = null, projectOwnerId = null,
   } = props
   if (!menu) return null
   const f = menu.file
   const favorite = (isLocalFavorite('FILE', f.id) ?? false)
+
+  const isFileOwner = !!(authUserId && f.ownerId && String(f.ownerId).toLowerCase() === String(authUserId).toLowerCase())
+  const isProjectOwner = !!(authUserId && projectOwnerId && String(projectOwnerId).toLowerCase() === String(authUserId).toLowerCase())
+  const canDeleteFile = isFileOwner || isProjectOwner
+  const deleteDisabledHint = canDeleteFile
+    ? undefined
+    : 'Solo el propietario del archivo o el propietario del proyecto pueden eliminarlo.'
+
+  void project
   return (
     <>
       <div
@@ -337,15 +349,25 @@ export function FileContextMenu(props: FileContextMenuProps) {
         <button
           onClick={() => {
             onClose()
+            if (!canDeleteFile) return
             onDelete(f)
           }}
-          disabled={deletePending}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-status-blocked/15 text-status-blocked disabled:opacity-50"
+          disabled={deletePending || !canDeleteFile}
+          title={!canDeleteFile ? deleteDisabledHint : undefined}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md text-status-blocked disabled:opacity-50',
+            canDeleteFile ? 'hover:bg-status-blocked/15' : 'cursor-not-allowed'
+          )}
         >
           {deletingId === f.id && deletePending ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               Eliminando…
+            </>
+          ) : !canDeleteFile ? (
+            <>
+              <ShieldAlert className="w-4 h-4 opacity-70" />
+              Sin permiso para eliminar
             </>
           ) : (
             <>

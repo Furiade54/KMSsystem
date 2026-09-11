@@ -411,7 +411,41 @@ export async function deleteFileById(
   if (!projR.recordset[0]) throw new ForbiddenError('No tienes acceso a este proyecto')
   const isFileOwner = String(r.IdPropietario).toLowerCase() === String(auth.userId).toLowerCase()
   const isProjectOwner = String(projR.recordset[0].ProjectOwner).toLowerCase() === String(auth.userId).toLowerCase()
-  if (!isFileOwner && !isProjectOwner) throw new ForbiddenError('Solo el propietario puede eliminar el archivo')
+  if (!isFileOwner && !isProjectOwner) {
+    const metaQ = pool.request()
+    metaQ.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+    metaQ.input('fid', sql.UniqueIdentifier, id)
+    metaQ.input('aid', sql.UniqueIdentifier, auth.userId)
+    const meta = await metaQ.query<{
+      ownerFullName: string | null
+      ownerCorreo: string | null
+      requesterFullName: string | null
+      requesterCorreo: string | null
+      fileName: string | null
+    }>(`
+      SELECT
+        (SELECT NombreCompleto FROM dbo.Usuarios WHERE Id = a.IdPropietario) AS ownerFullName,
+        (SELECT Correo FROM dbo.Usuarios WHERE Id = a.IdPropietario) AS ownerCorreo,
+        (SELECT NombreCompleto FROM dbo.Usuarios WHERE Id = @aid AND IdOrganizacion = @orgId) AS requesterFullName,
+        (SELECT Correo FROM dbo.Usuarios WHERE Id = @aid AND IdOrganizacion = @orgId) AS requesterCorreo,
+        (CASE WHEN a.Extension IS NULL OR LTRIM(a.Extension) = '' THEN a.Nombre ELSE CONCAT(a.Nombre, '.', a.Extension) END) AS fileName
+      FROM dbo.Archivos a WHERE a.Id = @fid;
+    `)
+    const m = meta.recordset[0]
+    const displayOwner = (m?.ownerFullName && m?.ownerCorreo)
+      ? `${m.ownerFullName} (${m.ownerCorreo})`
+      : (m?.ownerFullName ?? m?.ownerCorreo ?? 'el propietario actual')
+    const msg = `No puedes eliminar el archivo "${m?.fileName ?? String(r.Nombre ?? '')}" porque no eres su propietario. Solo ${displayOwner} o el propietario del proyecto pueden eliminarlo.`
+    throw new ForbiddenError(msg, undefined, {
+      kind: 'FILE_NOT_OWNER',
+      scope: 'file',
+      fileName: m?.fileName ?? (r.Nombre ? String(r.Nombre) + (r.Extension ? `.${String(r.Extension)}` : '') : null),
+      ownerFullName: m?.ownerFullName ?? null,
+      ownerCorreo: m?.ownerCorreo ?? null,
+      requesterFullName: m?.requesterFullName ?? null,
+      requesterCorreo: m?.requesterCorreo ?? null,
+    })
+  }
   const storage = getStorageProvider()
   const key = r.StorageKey || buildStorageKey(r)
   await storage.deleteObject(key).catch(() => {})

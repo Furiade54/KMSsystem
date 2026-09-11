@@ -192,7 +192,14 @@ function ProjectDetailPage() {
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [showDeleteProject, setShowDeleteProject] = useState(false)
-  const [showForbiddenDelete, setShowForbiddenDelete] = useState(false)
+  const [showForbiddenDelete, setShowForbiddenDelete] = useState<{
+    open: boolean
+    scope?: 'project' | 'file'
+    fileName?: string | null
+    ownerFullName?: string | null
+    ownerEmail?: string | null
+    requesterFullName?: string | null
+  }>({ open: false })
   const [showEditProject, setShowEditProject] = useState(false)
   const [confirmDeleteFile, setConfirmDeleteFile] = useState<ApiFile | null>(null)
   const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<ApiFolder | null>(null)
@@ -659,7 +666,7 @@ function ProjectDetailPage() {
     onError: (err: any) => {
       if (err?.response?.status === 403) {
         setShowDeleteProject(false)
-        setShowForbiddenDelete(true)
+        setShowForbiddenDelete({ open: true, scope: 'project', requesterFullName: authUser?.fullName ?? null })
       } else {
         alert(err?.response?.data?.message || err?.message || 'No se pudo eliminar el proyecto')
       }
@@ -1770,6 +1777,26 @@ function ProjectDetailPage() {
         setSelectedResource(null)
       }
     },
+    onError: (err: any) => {
+      if (err?.response?.status === 403) {
+        const details = err?.response?.data?.details
+        const fallbackFile = confirmDeleteFile
+        const fileName = (details?.fileName as string | undefined)
+          ?? (fallbackFile ? `${fallbackFile.name}${fallbackFile.extension ? `.${fallbackFile.extension}` : ''}` : null)
+        const ownerFullName = (details?.ownerFullName as string | null | undefined) ?? fallbackFile?.ownerName ?? null
+        const ownerEmail = (details?.ownerEmail as string | null | undefined) ?? fallbackFile?.ownerEmail ?? null
+        setShowForbiddenDelete({
+          open: true,
+          scope: 'file',
+          fileName,
+          ownerFullName,
+          ownerEmail,
+          requesterFullName: authUser?.fullName ?? null,
+        })
+      } else {
+        alert(err?.response?.data?.message || err?.message || 'No se pudo eliminar el archivo')
+      }
+    },
   })
 
   const deleteFolderMutation = useMutation({
@@ -2498,6 +2525,8 @@ function ProjectDetailPage() {
         clearPending={clearMasterMutation.isPending}
         deletePending={deleteFileMutation.isPending}
         deletingId={deleteFileMutation.variables}
+        authUserId={authUser?.id ?? null}
+        projectOwnerId={project?.ownerId ?? null}
       />
 
       <DocsAreaContextMenu
@@ -2524,8 +2553,13 @@ function ProjectDetailPage() {
       />
 
       <ForbiddenDeleteDialog
-        open={showForbiddenDelete}
-        onClose={() => setShowForbiddenDelete(false)}
+        open={showForbiddenDelete.open}
+        onClose={() => setShowForbiddenDelete({ open: false })}
+        scope={showForbiddenDelete.scope}
+        fileName={showForbiddenDelete.fileName}
+        ownerFullName={showForbiddenDelete.ownerFullName}
+        ownerEmail={showForbiddenDelete.ownerEmail}
+        requesterFullName={showForbiddenDelete.requesterFullName}
       />
 
       <ProjectConfirmDeleteFileDialog

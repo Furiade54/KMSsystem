@@ -189,11 +189,29 @@ export function DeleteProjectDialog(props: DeleteProjectDialogProps) {
 export type ForbiddenDeleteDialogProps = {
   open: boolean
   onClose: () => void
+  scope?: 'project' | 'file'
+  fileName?: string | null
+  ownerFullName?: string | null
+  ownerEmail?: string | null
+  requesterFullName?: string | null
 }
 
 export function ForbiddenDeleteDialog(props: ForbiddenDeleteDialogProps) {
-  const { open, onClose } = props
+  const {
+    open,
+    onClose,
+    scope = 'project',
+    fileName = null,
+    ownerFullName = null,
+    ownerEmail = null,
+    requesterFullName = null,
+  } = props
   if (!open) return null
+  const isFile = scope === 'file'
+  const displayOwner =
+    ownerFullName && ownerEmail
+      ? `${ownerFullName} (${ownerEmail})`
+      : ownerFullName ?? ownerEmail ?? 'el propietario del archivo'
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -206,12 +224,41 @@ export function ForbiddenDeleteDialog(props: ForbiddenDeleteDialogProps) {
               <ShieldAlert className="w-5 h-5 text-status-blocked" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-semibold text-foreground">Acceso Denegado</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                {isFile ? 'No puedes eliminar este archivo' : 'Acceso Denegado'}
+              </h2>
               <p className="text-sm text-muted-foreground mt-1">
-                No tienes permisos para eliminar este proyecto. Solo el <strong>propietario</strong> del proyecto puede enviarlo a la papelera.
+                {isFile ? (
+                  <>
+                    No eres el propietario de <strong className="text-foreground">{fileName || 'este archivo'}</strong>.
+                    {requesterFullName ? ` (tú eres ${requesterFullName}).` : '.'}
+                  </>
+                ) : (
+                  <>
+                    No tienes permisos para eliminar este proyecto.
+                  </>
+                )}
               </p>
             </div>
           </div>
+
+          <div className="rounded-md border border-border bg-surface-secondary/50 px-3 py-2.5 space-y-0.5">
+            <p className="text-xs font-semibold text-foreground/90">¿Quién puede eliminarlo?</p>
+            {isFile ? (
+              <ul className="list-disc marker:text-muted-foreground/70 pl-4 text-xs text-muted-foreground mt-1 space-y-0.5">
+                <li>Su propietario actual: <span className="font-medium text-foreground">{displayOwner}</span></li>
+                <li>El propietario del proyecto al que pertenece el archivo</li>
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-1">
+                Solo el <strong>propietario</strong> del proyecto puede enviarlo a la papelera.
+              </p>
+            )}
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Si crees que deberías tener permiso, contacta al propietario o a un administrador de la organización.
+          </p>
         </div>
         <div className="flex items-center justify-end gap-2 p-4 border-t border-border bg-surface-secondary/40">
           <button
