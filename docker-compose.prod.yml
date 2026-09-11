@@ -1,0 +1,186 @@
+services:
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: kms-db-init
+    volumes:
+      - ./infra/docker/db/init.sql:/init.sql:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        INSTANCE_PART=""
+        if [ -n "$${SQL_INSTANCE_NAME:-}" ]; then
+          INSTANCE_PART="\\$${SQL_INSTANCE_NAME}"
+        fi
+        SERVER_ARG="$${SQL_SERVER}$${INSTANCE_PART},$${SQL_PORT:-1433}"
+        ENCRYPT_ARG="-C"
+
+        echo "Conectando a SQL Server: $${SQL_SERVER}$${INSTANCE_PART}:$${SQL_PORT:-1433}"
+        for i in $$(seq 1 30); do
+          if /opt/mssql-tools18/bin/sqlcmd \
+            -S "$$SERVER_ARG" \
+            -U "$${SQL_USER:-sa}" \
+            -P "$${SQL_PASSWORD}" \
+            $$ENCRYPT_ARG \
+            -Q "SELECT 1" > /dev/null 2>&1; then
+            break
+          fi
+          echo "  intento $$i/30..."
+          sleep 5
+          if [ "$$i" = "30" ]; then
+            echo "ERROR: no se pudo conectar a SQL Server en 30 intentos."
+            exit 1
+          fi
+        done
+        echo "✓ Conexión SQL OK. Ejecutando init.sql..."
+        /opt/mssql-tools18/bin/sqlcmd \
+          -S "$$SERVER_ARG" \
+          -U "$${SQL_USER:-sa}" \
+          -P "$${SQL_PASSWORD}" \
+          $$ENCRYPT_ARG \
+          -i /init.sql
+        echo "✓ Init SQL finalizado."
+    environment:
+      SQL_SERVER: ${SQL_SERVER}
+      SQL_INSTANCE_NAME: ${SQL_INSTANCE_NAME:-}
+      SQL_PORT: ${SQL_PORT:-1433}
+      SQL_USER: ${SQL_USER:-sa}
+      SQL_PASSWORD: ${SQL_PASSWORD}
+    networks:
+      - kms-net
+    restart: "no"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        tag: "kms-db-init"
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/backend/Dockerfile
+    image: kms/backend:latest
+    container_name: kms-backend
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 51478
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      SQL_SERVER: ${SQL_SERVER}
+      SQL_INSTANCE_NAME: ${SQL_INSTANCE_NAME:-}
+      SQL_PORT: ${SQL_PORT:-1433}
+      SQL_DATABASE: ${SQL_DATABASE:-KMS}
+      SQL_USER: ${SQL_USER:-sa}
+      SQL_PASSWORD: ${SQL_PASSWORD}
+      SQL_ENCRYPT: ${SQL_ENCRYPT:-false}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/backend/storage
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_S3_PRESIGNED_EXPIRES_IN: ${AWS_S3_PRESIGNED_EXPIRES_IN:-900}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    volumes:
+      - kms-storage-data:/app/backend/storage
+    networks:
+      - kms-net
+    expose:
+      - "51478"
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: "1.0"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:51478/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "kms-backend"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_APP_TITLE: ${VITE_APP_TITLE:-KMS}
+    image: kms/frontend:latest
+    container_name: kms-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - kms-net
+    expose:
+      - "80"
+    mem_limit: 128m
+    mem_reservation: 64m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+        tag: "kms-frontend"
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: kms-proxy
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./infra/docker/proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - kms-net
+    ports:
+      - "${APP_PORT:-8080}:80"
+    mem_limit: 128m
+    mem_reservation: 64m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "kms-proxy"
+
+volumes:
+  kms-storage-data:
+    name: kms-storage-data
+
+networks:
+  kms-net:
+    driver: bridge
+    name: kms-net

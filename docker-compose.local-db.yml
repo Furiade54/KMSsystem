@@ -1,0 +1,57 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: kms-db
+    restart: unless-stopped
+    user: root
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: ${SQL_PASSWORD}
+      MSSQL_TCP_PORT: 1433
+      MSSQL_MEMORY_LIMIT_MB: "3072"
+    volumes:
+      - kms-mssql-data:/var/opt/mssql
+      - ./infra/docker/db/mssql.conf:/var/opt/mssql/mssql.conf:ro
+      - ./infra/docker/db:/docker-entrypoint-initdb.d:ro
+    networks:
+      - kms-net
+    expose:
+      - "1433"
+    ports:
+      - "127.0.0.1:1433:1433"
+    mem_limit: 3584m
+    mem_reservation: 2560m
+    cpus: "2.0"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${SQL_PASSWORD} -C -Q \"SELECT 1\" > /dev/null 2>&1 || exit 1",
+        ]
+      interval: 20s
+      timeout: 15s
+      retries: 15
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "kms-db"
+
+  db-init:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SQL_SERVER: db
+      SQL_INSTANCE_NAME: ""
+      SQL_PORT: 1433
+      SQL_USER: sa
+      SQL_PASSWORD: ${SQL_PASSWORD}
+      SQL_ENCRYPT: "false"
+
+volumes:
+  kms-mssql-data:
+    name: kms-mssql-data
