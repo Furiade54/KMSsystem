@@ -38,6 +38,10 @@ pnpm-debug.log*
 # ============================================================
 infra/secrets/
 storage/
+# La carpeta de storage de datos en la raiz se ignora,
+# pero NO el codigo fuente backend/src/shared/storage/
+!backend/src/shared/storage/
+!backend/src/shared/storage/**
 uploads/
 tmp/
 temp/

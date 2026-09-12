@@ -2,7 +2,7 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-RUN npm install --no-audit --no-fund --loglevel=error --location=global tsc-alias
+RUN npm install --no-audit --no-fund --loglevel=error --location=global typescript@5 tsc-alias
 
 COPY packages/shared-types/ ./packages/shared-types/
 COPY backend/ ./backend/
@@ -10,8 +10,8 @@ COPY backend/ ./backend/
 RUN npm install --no-audit --no-fund --loglevel=error --prefix /app/packages/shared-types \
     && npm install --no-audit --no-fund --loglevel=error --prefix /app/backend
 
-RUN npx tsc -p /app/backend/tsconfig.json \
-    && npx tsc-alias -p /app/backend/tsconfig.json
+RUN cd /app/backend && npx tsc -p tsconfig.json \
+    && npx tsc-alias -p tsconfig.json
 
 FROM node:20-slim AS runtime
 
