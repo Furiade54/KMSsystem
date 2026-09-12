@@ -11,7 +11,7 @@ echo ^|   Iniciando servicios...                                         ^|
 echo ^|                                                                  ^|
 echo ^|   [API]  Backend      : http://localhost:51478                   ^|
 echo ^|  [WEB]  Frontend     : http://localhost:51479                   ^|
-echo ^|   [SQL]  SQL Server   : HP2023\IST  (encrypt=false, TLS v1.2)   ^|
+echo ^|   [SQL]  SQL Server   : 200.234.239.179:50271  (encrypt=false)   ^|
 echo ^|                                                                  ^|
 echo ^|   Credenciales demo:                                             ^|
 echo ^|     - Usuario: carlos.perez@ejemplo.com                          ^|

@@ -67,4 +67,7 @@ coverage/
 # Extras
 # ============================================================
 *.local
-*.sql
+datosconexion.md
+/infra/
+/infra/
+*.md
