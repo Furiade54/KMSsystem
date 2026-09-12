@@ -10,7 +10,8 @@ COPY backend/ ./backend/
 RUN npm install --no-audit --no-fund --loglevel=error --prefix /app/packages/shared-types \
     && npm install --no-audit --no-fund --loglevel=error --prefix /app/backend
 
-RUN cd /app/backend && npx tsc -p tsconfig.json \
+RUN set -e; cd /app/backend \
+    && npx tsc -p tsconfig.json \
     && npx tsc-alias -p tsconfig.json
 
 FROM node:20-slim AS runtime
@@ -46,4 +47,4 @@ EXPOSE 51478
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/backend/src/server.js"]

@@ -17,7 +17,13 @@
 !**/.env.prod.example
 **/infra/secrets/*.txt
 !**/infra/secrets/.gitkeep
+
+# Solo ignorar la carpeta storage DE DATOS (raíz y backend/storage runtime).
+# NO ignorar backend/src/shared/storage/ (código fuente con providers local + s3).
 **/storage
+!**/backend/src/shared/storage/
+!**/backend/src/shared/storage/**
+
 **/*.mjs
 **/*.md
 .dockerignore

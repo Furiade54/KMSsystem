@@ -22,6 +22,7 @@ services:
             -U "$${SQL_USER:-sa}" \
             -P "$${SQL_PASSWORD}" \
             $$ENCRYPT_ARG \
+            -v DB_NAME="$${SQL_DATABASE:-KMS}" \
             -Q "SELECT 1" > /dev/null 2>&1; then
             break
           fi
@@ -38,6 +39,7 @@ services:
           -U "$${SQL_USER:-sa}" \
           -P "$${SQL_PASSWORD}" \
           $$ENCRYPT_ARG \
+          -v DB_NAME="$${SQL_DATABASE:-KMS}" \
           -i /init.sql
         echo "✓ Init SQL finalizado."
     environment:
