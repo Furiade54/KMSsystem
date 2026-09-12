@@ -146,3 +146,134 @@ docker compose -f docker-compose.prod.yml logs backend --tail=50
 # Debería salir healthy
 curl -s http://localhost:${APP_PORT:-8080}/api/health
 ```
+
+---
+
+## 6. ERROR login: `Login failed for user 'kms'.` (problema de credenciales en VPS `.env`)
+### ✅ Causa confirmada + fix inmediato (NO es código, es valor de entorno)
+
+```
+kms-backend  | ⚠️  No se pudo conectar a SQL Server [200.234.239.179:50271 / KMS]
+kms-backend  |    Detalle: Login failed for user 'kms'.
+kms-backend  | Fallo al inicializar BD: ConnectionError: Login failed for user 'kms'.
+```
+
+### 🚨 Causa REAL: el `.env` de la VPS tiene `SQL_USER=kms` PERO ese login NO EXISTE en el MSSQL remoto.
+
+En el backend de **desarrollo (Windows)** que usa el **MISMO SQL remoto** `200.234.239.179:50271`
+y **sí conecta OK**, los valores son (fuente: `backend/.env`):
+```ini
+SQL_SERVER=200.234.239.179
+SQL_PORT=50271
+SQL_DATABASE=KMS
+SQL_USER=admin
+SQL_PASSWORD=Ist3222060
+SQL_ENCRYPT=false
+```
+
+El usuario de la BD real no es `kms` → es `admin`. Probablemente el archivo `.env.prod` en la
+VPS quedó con valores "de plantilla" y nunca se actualizaron.
+
+### 🔧 Fix inmediato en la VPS:
+
+1. Editar el `.env` que usa compose (nombre típico: `.env.prod` o `.env`):
+```bash
+cd ~/KMSsystem
+ls -la .env .env.prod 2>&1
+# si existe .env.prod → usarlo; si solo hay .env, usarlo.
+nano .env
+# O si: nano .env.prod
+```
+
+2. **DEJAR LAS VARIABLES DE SQL EXACTAMENTE ASÍ** (igual que en desarrollo, porque es la misma BD):
+```ini
+SQL_SERVER=200.234.239.179
+SQL_PORT=50271
+SQL_DATABASE=KMS
+SQL_USER=admin
+SQL_PASSWORD=Ist3222060
+SQL_ENCRYPT=false
+```
+
+3. Verificar también estas variables (otro fallo común que suele pasar después):
+```ini
+# NO dejar vacío
+JWT_SECRET=<una cadena larga aleatoria, la MISMA que usaste en desarrollo>
+JWT_EXPIRES_IN=24h
+
+# Almacenamiento: local o s3 (cualquiera de los 2, pero consistente)
+STORAGE_PROVIDER=local
+
+APP_PORT=8080
+VITE_API_URL=/api
+VITE_APP_TITLE=KMS
+CORS_ORIGIN=*
+```
+
+4. **Para que compose lea los nuevos valores hay que re-crear los contenedores (no basta con restart):**
+```bash
+cd ~/KMSsystem
+# 1. bajar todo (SIN -v — no borrar volúmenes de datos)
+docker compose -f docker-compose.prod.yml down
+
+# 2. re-subir con --force-recreate para que tome el .env nuevo
+docker compose -f docker-compose.prod.yml up -d --build --force-recreate
+
+# 3. esperar 20s y comprobar
+sleep 20
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs backend --tail=50
+curl -s http://localhost:8080/api/health
+```
+
+### ✅ Lo que tienes que ver después:
+- `kms-backend` → **STATUS = Up (healthy)** (no más Restarting)
+- `docker compose logs backend --tail=20` → **NO debe aparecer** `Login failed for user`
+- `curl -s http://localhost:8080/api/health` → debe devolver un JSON con `{"status":"ok",...}` o similar
+
+### 💡 Si sigue fallando:
+1. Comprueba que el puerto `50271/TCP` esté abierto hacia afuera en el firewall DE LA VPS (no el del SQL, el de la VPS Ubuntu):
+   ```bash
+   nc -zv 200.234.239.179 50271
+   ```
+   Si no contesta: la VPS no puede salir a ese puerto. Abre el firewall / security group de salida.
+2. Confirma que el login `admin` tiene `CONNECT SQL` + permisos en la BD `KMS` (por ejemplo `db_owner`) — lo sabrás porque en tu Windows conecta OK con esas mismas credenciales.
+3. Saca logs del momento exacto del start:
+   ```bash
+   docker compose -f docker-compose.prod.yml up backend   # foreground, CTRL+C al final
+   ```
+
+---
+
+## 7. ERROR upload: `413 Request Entity Too Large` en `POST /api/archivos`
+
+### ❌ NO es S3 (S3 no devuelve 413 por defecto — soporta 5GB / upload)
+### ✅ Causa: límites de tamaño de request del stack Nginx proxy → Express backend
+
+Límites **ANTES** (desalineados, 50 vs 500 mb) — si enviabas un PDF/Video >5MB en JSON o >50MB en multipart, fallaba 413:
+
+| Capa | Variable | Valor VIEJO |
+|---|---|---|
+| Nginx proxy (puerto 8080) | `client_max_body_size` | **50M** |
+| Express (body parser JSON) | `express.json({ limit })` | **5mb** ← el más restrictivo! |
+| Express (urlencoded) | `express.urlencoded({ limit })` | **sin límite explícito** (default 100kb) |
+| Multer upload multipart | `limits.fileSize` | **50MB** |
+
+### Solución: alinear TODO a **500 MB** (todos los cuellos de botella iguales)
+
+Archivos modificados:
+
+| Archivo | Línea | Cambio |
+|---|---|---|
+| `infra/docker/proxy/nginx.conf` | ~6 | `client_max_body_size 50M;` → **`client_max_body_size 500M;`** |
+| `backend/src/app.ts` | 44-45 | `express.json({ limit: '5mb' })` → **`express.json({ limit: '500mb' })`**<br>`express.urlencoded({ extended: true })` → **`express.urlencoded({ extended: true, limit: '500mb' })`** |
+| `backend/src/modules/files/files.controller.ts` | 27 | `fileSize: 50 * 1024 * 1024` → **`fileSize: 500 * 1024 * 1024`** (500MB) |
+
+### Aplicar en VPS después de git push:
+```bash
+cd ~/KMSsystem
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build proxy backend
+sleep 15
+docker compose -f docker-compose.prod.yml ps
+```
