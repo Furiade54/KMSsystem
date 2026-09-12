@@ -83,7 +83,7 @@ function mapArchivo(
     ownerId: String(row.IdPropietario),
     ownerName: row.OwnerNombre ?? null,
     ownerEmail: row.OwnerCorreo ?? null,
-    name: row.Nombre,
+    name: fixFilenameEncoding(row.Nombre),
     extension: row.Extension ?? null,
     mimeType: row.TipoMime ?? null,
     sizeBytes: Number(row.Tamano ?? 0),
@@ -102,6 +102,41 @@ function mapArchivo(
   }
 }
 
+function fixFilenameEncoding(input: string | null | undefined): string {
+  const s = input == null ? '' : String(input)
+  if (s.length === 0) return 'archivo'
+  const mojibakeHint =
+    s.includes('\u00c3\u00b1') ||
+    s.includes('\u00c3\u2018') ||
+    s.includes('\u00c3\u00a1') ||
+    s.includes('\u00c3\u00a9') ||
+    s.includes('\u00c3\u00ad') ||
+    s.includes('\u00c3\u00b3') ||
+    s.includes('\u00c3\u00ba') ||
+    s.includes('\u00c3\u00bc') ||
+    s.includes('\u00c2\u00bf') ||
+    s.includes('\u00c2\u00a1')
+  if (!mojibakeHint) return s
+  try {
+    const fixed = Buffer.from(s, 'latin1').toString('utf-8')
+    if (fixed && fixed.length > 0) return fixed
+  } catch {}
+  return s
+}
+
+function buildContentDispositionFilename(filename: string): string {
+  const raw = String(filename || 'archivo')
+  const safe = raw.replace(/[^a-zA-Z0-9._\- ]/g, '_').replace(/\s+/g, '-')
+  try {
+    const encoded = encodeURIComponent(raw).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    return `attachment; filename="${safe}"; filename*=UTF-8''${encoded}`
+  } catch {
+    return `attachment; filename="${safe}"`
+  }
+}
+
+export { buildContentDispositionFilename as _buildContentDispositionFilename, fixFilenameEncoding as _fixFilenameEncoding }
+
 function buildStorageKey(row: {
   IdProyecto: string
   IdCarpeta?: string | null
@@ -110,7 +145,8 @@ function buildStorageKey(row: {
   Extension?: string | null
 }): string {
   const proj = String(row.IdProyecto)
-  const cleanName = String(row.Nombre).replace(/[^a-zA-Z0-9._\- ]/g, '_').replace(/\s+/g, '-')
+  const fixedName = fixFilenameEncoding(String(row.Nombre))
+  const cleanName = fixedName.replace(/[^a-zA-Z0-9._\- ]/g, '_').replace(/\s+/g, '-')
   const parts: string[] = ['projects', proj]
   if (row.IdCarpeta) parts.push('folders', String(row.IdCarpeta))
   parts.push(`${String(row.Id)}_${cleanName}`)
@@ -145,8 +181,9 @@ export async function uploadFile(
   await ensureProjectAccess(pool, auth, body.projectId)
 
   const storage = getStorageProvider()
-  const ext = path.extname(file.originalname).replace(/^\./, '') || null
-  const name = file.originalname || 'archivo'
+  const rawFilename = fixFilenameEncoding(file.originalname || '')
+  const ext = path.extname(rawFilename).replace(/^\./, '') || null
+  const name = rawFilename || 'archivo'
   const providerName = storage.name
   const bucket = env.AWS_S3_BUCKET || null
   const sha256 = crypto.createHash('sha256').update(file.buffer).digest('hex')
@@ -472,12 +509,13 @@ export async function updateFileById(
   await ensureProjectAccess(pool, auth, String(r.IdProyecto))
 
   const patchFolderId = patch.folderId !== undefined ? (patch.folderId || null) : undefined
-  const patchNameRaw = patch.name != null ? String(patch.name).trim() : null
+  const patchNameRaw = patch.name != null ? fixFilenameEncoding(String(patch.name).trim()) : null
   const originalExt = r.Extension ? String(r.Extension).toLowerCase() : null
-  const originalBase = r.Nombre
+  const origNombreFixed = fixFilenameEncoding(String(r.Nombre))
+  const originalBase = origNombreFixed
     ? originalExt
-      ? String(r.Nombre).slice(0, -(originalExt.length + 1))
-      : String(r.Nombre)
+      ? origNombreFixed.slice(0, -(originalExt.length + 1))
+      : origNombreFixed
     : 'archivo'
 
   function finalizeName(raw: string): { name: string; ext: string | null } {
@@ -617,9 +655,9 @@ export async function copyFileById(
   const buf = await storage.getObject(srcKey)
   if (!buf) throw new NotFoundError('Contenido del archivo no encontrado en almacenamiento')
 
-  let baseName = String(src.Nombre)
+  let baseName = fixFilenameEncoding(String(src.Nombre))
   if (opts.name) {
-    const trimmed = String(opts.name).trim()
+    const trimmed = fixFilenameEncoding(String(opts.name).trim())
     if (trimmed.length > 0 && trimmed.length <= 255) baseName = trimmed
   }
   const ext = path.extname(baseName).replace(/^\./, '') || String(src.Extension || '')

@@ -2,9 +2,13 @@ import type { Request, Response, NextFunction } from 'express'
 import type { ApiResponse } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { AppError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
-import { copyFileById } from '../files/files.service'
+import { copyFileById, _fixFilenameEncoding } from '../files/files.service'
 import { logAuditRecord } from '../../shared/db/audit'
 import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
+
+function fixFolderName(input: string | null | undefined): string {
+  return _fixFilenameEncoding(input)
+}
 
 export type CarpetaRow = {
   Id: string
@@ -25,7 +29,7 @@ function mapCarpeta(row: CarpetaRow) {
     projectId: String(row.IdProyecto),
     parentId: row.IdCarpetaPadre ? String(row.IdCarpetaPadre) : null,
     ownerId: row.IdPropietario ? String(row.IdPropietario) : null,
-    name: row.Nombre,
+    name: fixFolderName(row.Nombre),
     inheritPermissions: Boolean(row.HeredaPermisos ?? true),
     filesCount: Number(row.archivosCount ?? 0),
     childrenCount: Number(row.hijosCount ?? 0),
@@ -112,7 +116,7 @@ export async function createFolder(
     const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
     const projectId = String(req.body?.projectId || '')
     if (!projectId) throw new AppError('projectId es requerido', 400)
-    const name = String(req.body?.name || '').trim()
+    const name = fixFolderName(String(req.body?.name || '')).trim()
     if (name.length === 0 || name.length > 255) throw new AppError('Nombre de carpeta inválido (1..255)', 400)
     const parentId = req.body?.parentId ? String(req.body.parentId) : null
 
@@ -176,7 +180,7 @@ export async function updateFolder(
   try {
     const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
     const id = String(req.params.id)
-    const patchName = req.body?.name != null ? String(req.body.name).trim() : null
+    const patchName = req.body?.name != null ? fixFolderName(String(req.body.name)).trim() : null
     const patchParentId = req.body?.parentId != null ? (req.body.parentId ? String(req.body.parentId) : null) : undefined
     if (patchName !== null && (patchName.length === 0 || patchName.length > 255)) {
       throw new AppError('Nombre inválido (1..255)', 400)
@@ -195,7 +199,7 @@ export async function updateFolder(
     `)
     const cur = row.recordset[0]
     if (!cur) throw new NotFoundError('Carpeta no encontrada')
-    const oldFolderName = String(cur.Nombre)
+    const oldFolderName = fixFolderName(String(cur.Nombre))
     const oldParentId = cur.IdCarpetaPadre ? String(cur.IdCarpetaPadre) : null
     const didRenameFolder = patchName !== null && patchName !== oldFolderName
     const didMoveFolder =

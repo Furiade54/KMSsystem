@@ -20,7 +20,12 @@ import {
   deleteFileVersion,
 } from './files.service'
 import { getStorageProvider } from '../../shared/storage'
+import { _buildContentDispositionFilename } from './files.service'
 import type { ApiResponse, PaginatedResult } from '../../../../packages/shared-types/src'
+
+function buildContentDisposition(filename: string): string {
+  return _buildContentDispositionFilename(filename)
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -294,7 +299,7 @@ export async function localDownloadEndpoint(
       res.setHeader('Content-Length', String(head.contentLength))
     }
     const baseName = v.key.split('/').pop() || 'archivo'
-    res.setHeader('Content-Disposition', `attachment; filename="${baseName}"`)
+    res.setHeader('Content-Disposition', buildContentDisposition(baseName))
     stream.pipe(res)
   } catch (e) {
     next(e)
