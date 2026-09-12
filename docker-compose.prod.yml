@@ -1,63 +1,4 @@
 services:
-  db-init:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: kms-db-init
-    volumes:
-      - ./infra/docker/db/init.sql:/init.sql:ro
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        INSTANCE_PART=""
-        if [ -n "$${SQL_INSTANCE_NAME:-}" ]; then
-          INSTANCE_PART="\\$${SQL_INSTANCE_NAME}"
-        fi
-        SERVER_ARG="$${SQL_SERVER}$${INSTANCE_PART},$${SQL_PORT:-1433}"
-        ENCRYPT_ARG="-C"
-
-        echo "Conectando a SQL Server: $${SQL_SERVER}$${INSTANCE_PART}:$${SQL_PORT:-1433}"
-        for i in $$(seq 1 30); do
-          if /opt/mssql-tools18/bin/sqlcmd \
-            -S "$$SERVER_ARG" \
-            -U "$${SQL_USER:-sa}" \
-            -P "$${SQL_PASSWORD}" \
-            $$ENCRYPT_ARG \
-            -v DB_NAME="$${SQL_DATABASE:-KMS}" \
-            -Q "SELECT 1" > /dev/null 2>&1; then
-            break
-          fi
-          echo "  intento $$i/30..."
-          sleep 5
-          if [ "$$i" = "30" ]; then
-            echo "ERROR: no se pudo conectar a SQL Server en 30 intentos."
-            exit 1
-          fi
-        done
-        echo "✓ Conexión SQL OK. Ejecutando init.sql..."
-        /opt/mssql-tools18/bin/sqlcmd \
-          -S "$$SERVER_ARG" \
-          -U "$${SQL_USER:-sa}" \
-          -P "$${SQL_PASSWORD}" \
-          $$ENCRYPT_ARG \
-          -v DB_NAME="$${SQL_DATABASE:-KMS}" \
-          -i /init.sql
-        echo "✓ Init SQL finalizado."
-    environment:
-      SQL_SERVER: ${SQL_SERVER}
-      SQL_INSTANCE_NAME: ${SQL_INSTANCE_NAME:-}
-      SQL_PORT: ${SQL_PORT:-1433}
-      SQL_USER: ${SQL_USER:-sa}
-      SQL_PASSWORD: ${SQL_PASSWORD}
-    networks:
-      - kms-net
-    restart: "no"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-        tag: "kms-db-init"
-
   backend:
     build:
       context: .
@@ -65,9 +6,6 @@ services:
     image: kms/backend:latest
     container_name: kms-backend
     restart: unless-stopped
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       PORT: 51478
