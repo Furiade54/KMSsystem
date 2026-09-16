@@ -72,9 +72,9 @@ import {
 type TabId = 'details' | 'activity' | 'comments'
 
 const TABS: { id: TabId; label: string; icon: typeof Info; count?: number }[] = [
+  { id: 'comments', label: 'Comentarios', icon: MessageSquare },
   { id: 'details', label: 'Detalles', icon: Info },
   { id: 'activity', label: 'Actividad', icon: History },
-  { id: 'comments', label: 'Comentarios', icon: MessageSquare },
 ]
 
 function iconForType(t: SelectedResourceType): typeof FileText {
@@ -199,7 +199,7 @@ export default function ContextPanel() {
   const navigate = useNavigate()
   const location = useLocation()
   const [sp, setSp] = useSearchParams()
-  const [tab, setTabInternal] = useState<TabId>('details')
+  const [tab, setTabInternal] = useState<TabId>('comments')
   const commentAnchorId = location.hash && location.hash.startsWith('#comment-')
     ? location.hash.slice('#comment-'.length)
     : null
@@ -212,10 +212,10 @@ export default function ContextPanel() {
     }
   }
   useEffect(() => {
-    const allowed: TabId[] = ['details', 'activity', 'comments']
+    const allowed: TabId[] = ['comments', 'details', 'activity']
     const tabParam = sp.get('tab')
     const fromUrl = allowed.includes(tabParam as TabId) ? (tabParam as TabId) : null
-    const winner: TabId = fromUrl ?? 'details'
+    const winner: TabId = fromUrl ?? 'comments'
     setTabInternal(winner)
   }, [sp, selectedResource?.id, selectedResource?.type])
   const highlightTimerRef = useRef<number | null>(null)
