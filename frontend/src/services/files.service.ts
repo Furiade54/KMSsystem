@@ -172,6 +172,33 @@ export async function listFileComments(id: string): Promise<ApiFileComment[]> {
   return res.data.data
 }
 
+export async function updateFileComment(
+  fileId: string,
+  commentId: string,
+  patch: { content?: string; resolved?: boolean }
+): Promise<ApiFileComment> {
+  const res = await api.patch<ApiResponse<ApiFileComment>>(
+    `/archivos/${fileId}/comentarios/${commentId}`,
+    patch
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo actualizar el comentario')
+  }
+  return res.data.data
+}
+
+export async function deleteFileComment(
+  fileId: string,
+  commentId: string
+): Promise<void> {
+  const res = await api.delete<ApiResponse<void>>(
+    `/archivos/${fileId}/comentarios/${commentId}`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo eliminar el comentario')
+  }
+}
+
 export async function uploadFile(params: {
   projectId: string
   folderId?: string | null

@@ -21,6 +21,9 @@ import {
   Send,
   MessageCircle,
   CornerDownLeft,
+  Pencil,
+  Trash2,
+  X as XIcon,
 } from 'lucide-react'
 import {
   useUIStore,
@@ -33,12 +36,14 @@ import {
   ApiFileVersion,
   commentFile as apiCommentFile,
   deleteFileVersion,
+  deleteFileComment,
   fetchFileById,
   fetchFileVersions,
   fileKind,
   formatBytes,
   listFileComments,
   setFileCurrentVersion,
+  updateFileComment,
   uploadFileVersion,
 } from '@/services/files.service'
 import { FileVersionHistoryList } from '../project/project-file-versions/FileVersionHistoryList'
@@ -428,12 +433,20 @@ function CommentCard({
   fileId,
   projectId,
   onMutate,
+  currentUserId,
+  canManageAll,
+  onEdit,
+  onDelete,
 }: {
   c: CommentThread
   depth: number
   fileId: string
   projectId: string
   onMutate: (payload: { id: string; content: string; parentId?: string | null }) => Promise<unknown> | unknown
+  currentUserId: string | null | undefined
+  canManageAll: boolean
+  onEdit: (payload: { commentId: string; content: string }) => Promise<unknown>
+  onDelete: (commentId: string) => Promise<unknown>
 }) {
   const queryClient = useQueryClient()
   const [replying, setReplying] = useState(false)
@@ -441,11 +454,32 @@ function CommentCard({
   const [replyError, setReplyError] = useState('')
   const [replyLoading, setReplyLoading] = useState(false)
   const replyRef = useRef<HTMLTextAreaElement>(null)
+
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editError, setEditError] = useState('')
+  const [editLoading, setEditLoading] = useState(false)
+  const editRef = useRef<HTMLTextAreaElement>(null)
+
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  const isOwner = !!currentUserId && String(c.userId).toLowerCase() === String(currentUserId).toLowerCase()
+  const canModify = isOwner || canManageAll
+
   useEffect(() => {
     if (replying && replyRef.current) {
       try { replyRef.current.focus() } catch {}
     }
   }, [replying])
+  useEffect(() => {
+    if (editing && editRef.current) {
+      try {
+        editRef.current.focus()
+        editRef.current.setSelectionRange(editRef.current.value.length, editRef.current.value.length)
+      } catch {}
+    }
+  }, [editing])
   const authorName = c.userFullName || c.userEmail || 'este comentario'
   const ui = {
     btnLabel: 'Responder',
@@ -479,6 +513,57 @@ function CommentCard({
       setReplyError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
       setReplyLoading(false)
+    }
+  }
+
+  const startEdit = () => {
+    setEditText(String(c.content || ''))
+    setEditError('')
+    setEditing(true)
+    setReplying(false)
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+    setEditText('')
+    setEditError('')
+  }
+
+  const submitEdit = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault()
+    if (editLoading) return
+    const trimmed = editText.trim()
+    if (trimmed.length === 0 || trimmed.length > 2000) {
+      setEditError('El comentario debe tener entre 1 y 2000 caracteres')
+      return
+    }
+    setEditError('')
+    setEditLoading(true)
+    try {
+      await onEdit({ commentId: c.id, content: trimmed })
+      await queryClient.invalidateQueries({ queryKey: ['file', 'comments', fileId] })
+      await queryClient.invalidateQueries({ queryKey: ['activity'] })
+      cancelEdit()
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const submitDelete = async () => {
+    if (deleteLoading) return
+    setDeleteLoading(true)
+    try {
+      await onDelete(c.id)
+      await queryClient.invalidateQueries({ queryKey: ['file', 'comments', fileId] })
+      await queryClient.invalidateQueries({ queryKey: ['activity'] })
+      await queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+    } catch (err) {
+      setDeleteConfirm(false)
+      alert(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setDeleteLoading(false)
     }
   }
   return (
@@ -517,27 +602,153 @@ function CommentCard({
             {formatRelativeTime(c.createdAt)}
           </span>
         </div>
-        <p className="text-[11px] text-foreground/90 leading-relaxed whitespace-pre-wrap break-words pl-8">
-          {c.content}
-        </p>
-        {ui.allowReply ? (
-          <div className="flex items-center justify-end mt-2 pl-8">
-            <button
-              type="button"
-              onClick={() => setReplying((r) => !r)}
-              className={clsx(
-                'text-[10px] flex items-center gap-1 px-2 py-1 rounded hover:bg-surface-tertiary transition-colors',
-                replying
-                  ? 'text-brand-600 dark:text-brand-300'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <CornerDownLeft className="w-3 h-3" />
-              {replying ? ui.btnLabelCancel : ui.btnLabel}
-            </button>
+
+        {editing ? (
+          <form onSubmit={submitEdit} className="mt-1 pl-8 space-y-2">
+            {editError ? (
+              <div className="text-[10px] rounded-md p-2 bg-status-blocked/15 border border-status-blocked/40 text-destructive/90">
+                {editError}
+              </div>
+            ) : null}
+            <textarea
+              ref={editRef}
+              rows={3}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              maxLength={2000}
+              placeholder="Escribe el comentario editado…"
+              className="input-base w-full resize-y min-h-[72px] text-xs"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {editText.length}
+                <span className="text-muted-foreground/60"> / 2000</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn-ghost text-[10px] px-2 py-1"
+                  onClick={cancelEdit}
+                  disabled={editLoading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary gap-1.5 text-[10px] px-2.5 py-1"
+                  disabled={editLoading}
+                >
+                  {editLoading ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Guardando…
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="w-3 h-3" />
+                      Guardar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <p className="text-[11px] text-foreground/90 leading-relaxed whitespace-pre-wrap break-words pl-8">
+            {c.content}
+          </p>
+        )}
+
+        {!editing && !deleteConfirm ? (
+          <div className="flex items-center justify-end mt-2 pl-8 gap-1 flex-wrap">
+            {ui.allowReply && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReplying((r) => !r)
+                  if (deleteConfirm) setDeleteConfirm(false)
+                }}
+                className={clsx(
+                  'text-[10px] flex items-center gap-1 px-2 py-1 rounded hover:bg-surface-tertiary transition-colors',
+                  replying
+                    ? 'text-brand-600 dark:text-brand-300'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <CornerDownLeft className="w-3 h-3" />
+                <span>{replying ? ui.btnLabelCancel : ui.btnLabel}</span>
+              </button>
+            )}
+            {canModify && (
+              <>
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className={clsx(
+                    'text-[10px] flex items-center gap-1 px-2 py-1 rounded hover:bg-surface-tertiary transition-colors',
+                    editing
+                      ? 'text-brand-600 dark:text-brand-300'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  title="Editar comentario"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>Editar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm(true)}
+                  className="text-[10px] flex items-center gap-1 px-2 py-1 rounded hover:bg-status-blocked/15 transition-colors text-muted-foreground hover:text-status-blocked"
+                  title="Eliminar comentario"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Eliminar</span>
+                </button>
+              </>
+            )}
           </div>
         ) : null}
-        {replying && ui.allowReply ? (
+
+        {deleteConfirm && !editing && (
+          <div className="mt-3 pl-8 space-y-2 rounded-md border border-status-blocked/30 bg-status-blocked/5 p-2.5">
+            <p className="text-[11px] text-foreground/90 font-medium">
+              ¿Estás seguro de eliminar este comentario?
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Esta acción no se puede deshacer.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="btn-ghost text-[10px] px-2 py-1"
+                onClick={() => setDeleteConfirm(false)}
+                disabled={deleteLoading}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-primary bg-status-blocked hover:bg-status-blocked/90 focus:ring-status-blocked/30 text-[10px] gap-1.5 px-2.5 py-1"
+                onClick={submitDelete}
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Eliminando…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3 h-3" />
+                    Sí, eliminar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {replying && ui.allowReply && !editing && (
           <form onSubmit={submitReply} className="mt-3 space-y-2">
             {replyError ? (
               <div className="text-[10px] rounded-md p-2 bg-status-blocked/15 border border-status-blocked/40 text-destructive/90">
@@ -590,7 +801,7 @@ function CommentCard({
               </div>
             </div>
           </form>
-        ) : null}
+        )}
       </div>
       {c.replies.length ? (
         <div className="space-y-3">
@@ -602,6 +813,10 @@ function CommentCard({
               fileId={fileId}
               projectId={projectId}
               onMutate={onMutate}
+              currentUserId={currentUserId}
+              canManageAll={canManageAll}
+              onEdit={onEdit}
+              onDelete={onDelete}
             />
           ))}
         </div>
@@ -617,6 +832,10 @@ function CommentsFeed({
   fileId,
   projectId,
   onReply,
+  currentUserId,
+  canManageAll,
+  onEdit,
+  onDelete,
 }: {
   loading: boolean
   error: string | null
@@ -624,6 +843,10 @@ function CommentsFeed({
   fileId: string
   projectId: string
   onReply: (payload: { id: string; content: string; parentId?: string | null }) => Promise<unknown> | unknown
+  currentUserId: string | null | undefined
+  canManageAll: boolean
+  onEdit: (payload: { commentId: string; content: string }) => Promise<unknown>
+  onDelete: (commentId: string) => Promise<unknown>
 }) {
   const roots = useMemo(() => buildThread(items), [items])
   if (loading && !items.length)
@@ -668,6 +891,10 @@ function CommentsFeed({
           fileId={fileId}
           projectId={projectId}
           onMutate={onReply}
+          currentUserId={currentUserId}
+          canManageAll={canManageAll}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       ))}
     </div>
@@ -722,6 +949,26 @@ function FilePanel({
   })
 
   const authUser = useAuthStore((s) => s.user)
+  const currentUserId = authUser?.id
+  const canManageAllComments =
+    !!authUser?.isOrganizationAdmin ||
+    !!authUser?.permissions?.has('comentarios.gestionar')
+
+  const editCommentMutation = useMutation({
+    mutationFn: (payload: { commentId: string; content: string }) =>
+      updateFileComment(resource.id, payload.commentId, { content: payload.content }),
+    onError: (err: unknown) => {
+      throw err instanceof Error ? err : new Error('Error desconocido')
+    },
+  })
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: string) =>
+      deleteFileComment(resource.id, commentId),
+    onError: (err: unknown) => {
+      throw err instanceof Error ? err : new Error('Error desconocido')
+    },
+  })
 
   const fileVersionsQuery = useQuery({
     queryKey: ['file', 'versions', resource.id],
@@ -1015,6 +1262,10 @@ function FilePanel({
               fileId={resource.id}
               projectId={resource.projectId}
               onReply={async (payload) => commentInlineMutation.mutateAsync(payload)}
+              currentUserId={currentUserId}
+              canManageAll={canManageAllComments}
+              onEdit={(p) => editCommentMutation.mutateAsync(p)}
+              onDelete={(cid) => deleteCommentMutation.mutateAsync(cid)}
             />
           </div>
         )}
