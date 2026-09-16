@@ -12,8 +12,8 @@ export default function LoginPage() {
   const { isAuthenticated, hydrate, login } = useAuthStore()
   const [hydrated, setHydrated] = useState(false)
 
-  const [email, setEmail] = useState('carlos.perez@ejemplo.com')
-  const [password, setPassword] = useState('Demo1234')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState<{ email?: string[]; password?: string[]; _form?: string[] }>({})
