@@ -168,9 +168,9 @@ import {
 const tabs = [
   { id: 'docs', label: 'Documentos', icon: FileText },
   { id: 'topics', label: 'Temas', icon: MessageSquare },
-  { id: 'master', label: 'Documento maestro', icon: FileCheck2 },
   { id: 'meetings', label: 'Reuniones', icon: Calendar },
   { id: 'contributions', label: 'Aportes', icon: Compass },
+  { id: 'master', label: 'Documento maestro', icon: FileCheck2 },
   { id: 'activity', label: 'Actividad', icon: Clock },
   { id: 'team', label: 'Equipo', icon: Users },
 ]
