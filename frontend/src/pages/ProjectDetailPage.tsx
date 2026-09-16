@@ -411,6 +411,20 @@ function ProjectDetailPage() {
     }
   }, [selectedResource?.id, selectedResource?.type, selectedResource?.projectId, rightPanelOpen, toggleRightPanel])
 
+  function handleSelectResourceOrTogglePanel(r: { type: 'file' | 'folder'; id: string }) {
+    const isSame =
+      selectedResource &&
+      selectedResource.type === r.type &&
+      selectedResource.id === r.id &&
+      selectedResource.projectId === projectId
+    if (isSame) {
+      toggleRightPanel()
+    } else {
+      setSelectedResource({ ...r, projectId })
+      if (!rightPanelOpen) toggleRightPanel()
+    }
+  }
+
   const detail = projectQuery.data
   const project = detail?.project
   const stats = detail?.stats
@@ -1927,7 +1941,7 @@ function ProjectDetailPage() {
           setFolderContextMenu={setFolderContextMenu}
           setFileContextMenu={setFileContextMenu}
           setDocsAreaContextMenu={setDocsAreaContextMenu}
-          setSelectedResource={(r) => setSelectedResource({ ...r, projectId })}
+          setSelectedResource={handleSelectResourceOrTogglePanel}
           breadcrumbChain={breadcrumbChain}
           visibleFoldersCurrentLevel={visibleFoldersCurrentLevel}
           docsSearchInput={docsSearchInput}
@@ -1976,8 +1990,7 @@ function ProjectDetailPage() {
               setSelectedFolderId(documentoMaestro.resourceId)
               setActiveTab('docs')
             } else {
-              setSelectedResource({ projectId, type: 'file', id: documentoMaestro.resourceId })
-              if (!rightPanelOpen) toggleRightPanel()
+              handleSelectResourceOrTogglePanel({ type: 'file', id: documentoMaestro.resourceId })
               setActiveTab('docs')
             }
           }}
@@ -2378,7 +2391,7 @@ function ProjectDetailPage() {
         onOpen={(folderId) => {
           if (!folderContextMenu) return
           setSelectedFolderId(folderId)
-          setSelectedResource({ type: 'folder', id: folderId, projectId })
+          handleSelectResourceOrTogglePanel({ type: 'folder', id: folderId })
         }}
         onRename={(folder) => {
           setRenameFolder(folder)
