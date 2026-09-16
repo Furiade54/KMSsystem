@@ -598,7 +598,7 @@ function ProjectDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'members', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
-    queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+    queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
     queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
     queryClient.invalidateQueries({ queryKey: ['project', 'topics', projectId] })
     queryClient.invalidateQueries({ queryKey: aportesQueryKeys.all(projectId) })
@@ -1328,7 +1328,7 @@ function ProjectDetailPage() {
       apiSetMeetingMinutesFile(projectId, payload.meetingId, payload.minutesFileId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'meetings', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'file-picker', 'files', projectId], exact: false })
     },
     onError: (err: any) => {
@@ -1442,7 +1442,7 @@ function ProjectDetailPage() {
     setIsUploadingActa(true)
     try {
       const uploaded = await uploadFile({ projectId, file })
-      await queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      await queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       await queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'file-picker', 'files', projectId], exact: false })
       await setMeetingMinutesFileMutation.mutateAsync({
         meetingId,
@@ -1600,7 +1600,7 @@ function ProjectDetailPage() {
       updateFolder(payload.id, { name: payload.name.trim() }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
       setRenameFolder(null)
       setRenameFolderName('')
@@ -1619,7 +1619,7 @@ function ProjectDetailPage() {
       updateFile(payload.id, { name: payload.name.trim() }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
       setRenameFile(null)
       setRenameFileName('')
@@ -1653,7 +1653,7 @@ function ProjectDetailPage() {
     mutationFn: (payload: { id: string; content: string }) =>
       apiCommentFile(payload.id, payload.content),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
       queryClient.invalidateQueries({ queryKey: ['activity'] })
@@ -1739,7 +1739,7 @@ function ProjectDetailPage() {
         }
       }
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
       onClose()
     } catch (err) {
@@ -1770,7 +1770,7 @@ function ProjectDetailPage() {
   const deleteFileMutation = useMutation({
     mutationFn: (fileId: string) => deleteFile(fileId),
     onSuccess: (_data, deletedFileId) => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
       if (selectedResource?.type === 'file' && selectedResource.id === deletedFileId) {
@@ -1803,7 +1803,7 @@ function ProjectDetailPage() {
     mutationFn: (folderId: string) => deleteFolder(folderId),
     onSuccess: (_data, deletedFolderId) => {
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
       if (selectedFolderId === deletedFolderId) {
         setSelectedFolderId(null)
@@ -1832,7 +1832,7 @@ function ProjectDetailPage() {
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
       queryClient.invalidateQueries({ queryKey: ['project', 'folders', projectId] })
       queryClient.invalidateQueries({ queryKey: ['project', 'detail', projectId] })
     },

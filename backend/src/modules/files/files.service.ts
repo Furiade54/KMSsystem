@@ -300,11 +300,11 @@ export async function listFiles(
   const where: string[] = ['a.IdProyecto=@projectId']
   const cReq = pool.request()
   cReq.input('projectId', sql.UniqueIdentifier, params.projectId)
-  const folderRaw = params.folderId === undefined ? undefined : params.folderId
-  const folderNormalized = folderRaw === '' ? undefined : folderRaw
-  if (folderNormalized === 'root') {
+  const folderRaw = params.folderId === undefined ? 'root' : params.folderId
+  const folderNormalized = folderRaw === '' ? 'root' : folderRaw
+  if (folderNormalized === 'root' || folderNormalized == null) {
     where.push('a.IdCarpeta IS NULL')
-  } else if (folderNormalized != null) {
+  } else {
     where.push('a.IdCarpeta=@folderId')
     cReq.input('folderId', sql.UniqueIdentifier, folderNormalized)
   }
