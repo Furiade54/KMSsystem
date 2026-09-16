@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Search,
@@ -9,10 +9,16 @@ import {
   Link2,
   Upload,
   Paperclip,
+  ChevronDown,
+  Check,
+  Info,
 } from 'lucide-react'
 import AportesHistoryList, {
+  PRIORITY_DESC,
   PRIORITY_LABEL,
+  STATUS_DESC,
   STATUS_LABEL,
+  TYPE_DESC,
   TYPE_LABEL,
 } from './project-aportes/AportesHistoryList'
 import { formatBytes } from '@/services/files.service'
@@ -54,13 +60,132 @@ const TIPOS_OPT: ApiContributionType[] = ['IDEA', 'COMENTARIO', 'ENLACE', 'ARCHI
 const ESTADOS_OPT: ApiContributionStatus[] = ['PUBLICADO', 'BORRADOR', 'OCULTO', 'DESTACADO']
 const PRIORIDADES_OPT: ApiContributionPriority[] = ['BAJA', 'NORMAL', 'ALTA', 'URGENTE']
 
+function LabeledCombobox<V extends string>({
+  open,
+  setOpen,
+  options,
+  value,
+  onChange,
+  labels,
+  descriptions,
+  placeholder,
+  ariaLabel,
+  size = 'md',
+  includeEliminado,
+}: {
+  open: boolean
+  setOpen: (v: boolean) => void
+  options: V[]
+  value: V
+  onChange: (v: V) => void
+  labels: Record<V, string>
+  descriptions?: Record<V, string>
+  placeholder?: string
+  ariaLabel?: string
+  size?: 'sm' | 'md'
+  includeEliminado?: boolean
+}) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const handleDoc = (e: MouseEvent) => {
+      if (!boxRef.current) return
+      if (!boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleDoc)
+    return () => document.removeEventListener('mousedown', handleDoc)
+  }, [open, setOpen])
+  const allOpts: V[] = includeEliminado ? [...options, 'ELIMINADO' as V] : options
+  return (
+    <div className="relative w-full" ref={boxRef}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className={clsx(
+          'w-full rounded-md border bg-white dark:bg-slate-800 px-2 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 flex items-center gap-1.5 transition-colors',
+          size === 'sm'
+            ? 'border-slate-300 dark:border-slate-600 py-1 text-xs text-slate-700 dark:text-slate-200'
+            : 'border-slate-300 dark:border-slate-600 py-1.5 text-xs text-slate-700 dark:text-slate-200'
+        )}
+      >
+        <span className="flex-1 text-left truncate">
+          {value ? labels[value] : (placeholder ?? '')}
+        </span>
+        <ChevronDown className={clsx('w-3.5 h-3.5 text-slate-500 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open ? (
+        <ul
+          role="listbox"
+          className="absolute z-40 left-0 right-0 top-full mt-1 overflow-hidden rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg max-h-80 overflow-y-auto"
+        >
+          {allOpts.map((opt) => {
+            const isSelected = opt === value
+            return (
+              <li
+                role="option"
+                aria-selected={isSelected}
+                key={String(opt)}
+                onClick={() => {
+                  onChange(opt)
+                  setOpen(false)
+                }}
+                className={clsx(
+                  'cursor-pointer px-3 py-2 transition-colors',
+                  isSelected ? 'bg-brand-500/10' : 'hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <div
+                    className={clsx(
+                      'mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0',
+                      isSelected
+                        ? 'bg-brand-500 border-brand-500 text-white'
+                        : 'border-slate-300 dark:border-slate-500 text-transparent'
+                    )}
+                  >
+                    <Check className="w-3 h-3" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={clsx('text-xs font-medium', isSelected ? 'text-brand-700 dark:text-brand-200' : 'text-slate-800 dark:text-slate-100')}>
+                        {labels[opt] ?? (includeEliminado && opt === 'ELIMINADO' ? 'Eliminado' : String(opt))}
+                      </span>
+                    </div>
+                    {descriptions && descriptions[opt as keyof typeof descriptions] ? (
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                        {descriptions[opt as keyof typeof descriptions]}
+                      </p>
+                    ) : null}
+                    {includeEliminado && opt === 'ELIMINADO' ? (
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                        {STATUS_DESC.ELIMINADO}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 export default function ProjectAportesTab(props: ProjectAportesTabProps) {
   const { filters, listUi, forms, pending, callbacks, linkTopicUi, canCreateAportes, canEditAportes, canDeleteAportes, formatRelativeTime } = props
 
   const { showNewAporte, editingAporte, formNew, formEdit, confirmDeleteAporte, showLinkTopicModal } = forms
   const isEditing = editingAporte != null
   const form = isEditing ? formEdit : formNew
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [tipoOpen, setTipoOpen] = useState(false)
+  const [estadoOpen, setEstadoOpen] = useState(false)
+  const [prioridadOpen, setPrioridadOpen] = useState(false)
 
   const handlePickFile = () => {
     if (form.uploading) return
@@ -198,34 +323,64 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">Tipo</label>
-                  <select
+                  <LabeledCombobox
+                    open={tipoOpen}
+                    setOpen={setTipoOpen}
+                    options={TIPOS_OPT}
                     value={form.type}
-                    onChange={(e) => form.setType(e.target.value as ApiContributionType)}
-                    className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs outline-none focus:border-brand-500"
-                  >
-                    {TIPOS_OPT.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-                  </select>
+                    onChange={(v) => form.setType(v)}
+                    labels={TYPE_LABEL}
+                    descriptions={TYPE_DESC}
+                    ariaLabel="Seleccionar tipo de aporte"
+                  />
+                  <div className="mt-1 flex items-start gap-1.5 text-[10.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <Info className="w-3 h-3 mt-[1px] shrink-0 opacity-80" />
+                    <span>
+                      <span className="font-medium text-slate-600 dark:text-slate-300">{TYPE_LABEL[form.type]}:</span>{' '}
+                      {TYPE_DESC[form.type]}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">Estado</label>
-                  <select
+                  <LabeledCombobox
+                    open={estadoOpen}
+                    setOpen={setEstadoOpen}
+                    options={ESTADOS_OPT}
                     value={form.status}
-                    onChange={(e) => form.setStatus(e.target.value as ApiContributionStatus)}
-                    className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs outline-none focus:border-brand-500"
-                  >
-                    {ESTADOS_OPT.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                    <option value="ELIMINADO">Eliminado</option>
-                  </select>
+                    onChange={(v) => form.setStatus(v)}
+                    labels={STATUS_LABEL}
+                    descriptions={STATUS_DESC}
+                    includeEliminado
+                    ariaLabel="Seleccionar estado del aporte"
+                  />
+                  <div className="mt-1 flex items-start gap-1.5 text-[10.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <Info className="w-3 h-3 mt-[1px] shrink-0 opacity-80" />
+                    <span>
+                      <span className="font-medium text-slate-600 dark:text-slate-300">{STATUS_LABEL[form.status] ?? 'Eliminado'}:</span>{' '}
+                      {STATUS_DESC[form.status] ?? STATUS_DESC.ELIMINADO}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">Prioridad</label>
-                  <select
+                  <LabeledCombobox
+                    open={prioridadOpen}
+                    setOpen={setPrioridadOpen}
+                    options={PRIORIDADES_OPT}
                     value={form.priority}
-                    onChange={(e) => form.setPriority(e.target.value as ApiContributionPriority)}
-                    className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs outline-none focus:border-brand-500"
-                  >
-                    {PRIORIDADES_OPT.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
-                  </select>
+                    onChange={(v) => form.setPriority(v)}
+                    labels={PRIORITY_LABEL}
+                    descriptions={PRIORITY_DESC}
+                    ariaLabel="Seleccionar prioridad del aporte"
+                  />
+                  <div className="mt-1 flex items-start gap-1.5 text-[10.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <Info className="w-3 h-3 mt-[1px] shrink-0 opacity-80" />
+                    <span>
+                      <span className="font-medium text-slate-600 dark:text-slate-300">{PRIORITY_LABEL[form.priority]}:</span>{' '}
+                      {PRIORITY_DESC[form.priority]}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div>

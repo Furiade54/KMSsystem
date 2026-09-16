@@ -49,6 +49,17 @@ export const TYPE_LABEL: Record<ApiContributionType, string> = {
   OTRO: 'Otro',
 }
 
+export const TYPE_DESC: Record<ApiContributionType, string> = {
+  IDEA: 'Propuesta o sugerencia nueva para mejorar el proyecto o resolver algo.',
+  COMENTARIO: 'Opinión, aclaración o feedback breve sobre el proyecto o algún tema.',
+  ENLACE: 'Link externo útil (documentación web, artículo, video, recurso online).',
+  ARCHIVO: 'Adjunta un documento ya subido al proyecto (PDF, DOCX, Excel, etc.).',
+  IMAGEN: 'Captura de pantalla, diseño, foto o gráfico para ilustrar una idea.',
+  ENCUESTA: 'Búsqueda de opinión del equipo: haz una pregunta y que voten las respuestas.',
+  MENSAJE: 'Comunicación general o recordatorio para todos los miembros del proyecto.',
+  OTRO: 'Cualquier otro aporte que no encaje en las categorías anteriores.',
+}
+
 export const STATUS_LABEL: Record<ApiContributionStatus, string> = {
   BORRADOR: 'Borrador',
   PUBLICADO: 'Publicado',
@@ -57,11 +68,26 @@ export const STATUS_LABEL: Record<ApiContributionStatus, string> = {
   DESTACADO: 'Destacado',
 }
 
+export const STATUS_DESC: Record<ApiContributionStatus, string> = {
+  BORRADOR: 'Aún no se muestra al resto. Seguís editándolo antes de compartirlo.',
+  PUBLICADO: 'Visible para todos los miembros del proyecto (estado normal).',
+  OCULTO: 'Queda guardado pero temporalmente no se muestra al equipo.',
+  ELIMINADO: 'Marcado como eliminado (queda en histórico para auditoría).',
+  DESTACADO: 'Aporte importante que aparece resaltado en la parte superior.',
+}
+
 export const PRIORITY_LABEL: Record<ApiContributionPriority, string> = {
   BAJA: 'Baja',
   NORMAL: 'Normal',
   ALTA: 'Alta',
   URGENTE: 'Urgente',
+}
+
+export const PRIORITY_DESC: Record<ApiContributionPriority, string> = {
+  BAJA: 'Se puede revisar cuando haya disponibilidad, sin apuro.',
+  NORMAL: 'Prioridad habitual para un aporte común del proyecto.',
+  ALTA: 'Importante, conviene revisarlo pronto (en los próximos días).',
+  URGENTE: 'Bloqueante o con plazo corto; necesita atención inmediata.',
 }
 
 export function typeBadgeClass(type: ApiContributionType): string {
