@@ -424,6 +424,24 @@ function buildThread(items: ApiFileComment[]): CommentThread[] {
       roots.push(full)
     }
   }
+  const byCreatedAsc = (a: CommentThread, b: CommentThread) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    if (ta !== tb) return ta - tb
+    return a.id.localeCompare(b.id)
+  }
+  const byCreatedDesc = (a: CommentThread, b: CommentThread) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    if (ta !== tb) return tb - ta
+    return b.id.localeCompare(a.id)
+  }
+  const sortRepliesRec = (t: CommentThread) => {
+    t.replies.sort(byCreatedAsc)
+    for (const r of t.replies) sortRepliesRec(r)
+  }
+  roots.sort(byCreatedDesc)
+  for (const r of roots) sortRepliesRec(r)
   return roots
 }
 
