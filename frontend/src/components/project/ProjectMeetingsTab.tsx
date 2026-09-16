@@ -1,4 +1,4 @@
-import type { ChangeEvent, MutableRefObject } from 'react'
+import type { MutableRefObject } from 'react'
 import { useState } from 'react'
 import clsx from 'clsx'
 import {
@@ -12,7 +12,6 @@ import {
   Loader2,
   Users,
   UserMinus,
-  Upload,
   Link2,
   Unlink,
   Download,
@@ -80,12 +79,10 @@ export type ProjectMeetingsTabProps = {
 
   members: ProjectMember[] | undefined
 
-  isUploadingActa: boolean
   setRemoveMeetingFileId: (v: string | null) => void
   removeMeetingFileId: string | null
   setFilePickerSearch: (v: string) => void
   setShowFilePicker: (v: boolean) => void
-  minutesUploadInputRef: MutableRefObject<HTMLInputElement | null>
 
   confirmDeleteMeeting: ApiMeeting | null
   setConfirmDeleteMeeting: (m: ApiMeeting | null) => void
@@ -101,7 +98,6 @@ export type ProjectMeetingsTabProps = {
   onSubmitAddParticipant: (meetingId: string) => void
   onToggleAttendance: (meetingId: string, userId: string, attended: boolean) => void
   onRemoveParticipant: (meetingId: string, userId: string) => void
-  onUploadActa: (ev: ChangeEvent<HTMLInputElement>, meetingId: string) => void
   onConfirmUnlinkActa: (meetingId: string) => void
 
   projectTopicsItems: ApiTopic[] | undefined
@@ -149,12 +145,10 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
     newParticipantAttended,
     setNewParticipantAttended,
     members,
-    isUploadingActa,
     setRemoveMeetingFileId,
     removeMeetingFileId,
     setFilePickerSearch,
     setShowFilePicker,
-    minutesUploadInputRef,
     confirmDeleteMeeting,
     setConfirmDeleteMeeting,
     upsertParticipantPending,
@@ -167,7 +161,6 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
     onSubmitAddParticipant,
     onToggleAttendance,
     onRemoveParticipant,
-    onUploadActa,
     onConfirmUnlinkActa,
     projectTopicsItems,
     linkingTopicsForMeetingId,
@@ -809,32 +802,10 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                   Campo <code className="bg-surface-secondary/80 px-1 rounded">IdActaArchivo</code> en la reunión
                                 </p>
                               </div>
-                              <input
-                                ref={minutesUploadInputRef}
-                                type="file"
-                                hidden
-                                onChange={(e) => onUploadActa(e, meeting.id)}
-                              />
+
                             </div>
                             {canEditMeetings ? (
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  type="button"
-                                  className="btn-primary text-[11.5px] h-8 px-2"
-                                  onClick={() => {
-                                    minutesUploadInputRef.current?.click()
-                                  }}
-                                  disabled={isUploadingActa || setMinutesFilePending}
-                                >
-                                  {isUploadingActa ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <Upload className="w-3.5 h-3.5" />
-                                  )}
-                                  <span className="ml-1.5">
-                                    {isUploadingActa ? 'Subiendo…' : 'Subir acta'}
-                                  </span>
-                                </button>
                                 <button
                                   type="button"
                                   className="btn-secondary text-[11.5px] h-8 px-2"
@@ -842,7 +813,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     setFilePickerSearch('')
                                     setShowFilePicker(true)
                                   }}
-                                  disabled={isUploadingActa || setMinutesFilePending}
+                                  disabled={setMinutesFilePending}
                                 >
                                   <Link2 className="w-3.5 h-3.5" />
                                   <span className="ml-1.5">Vincular existente</span>
@@ -852,7 +823,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     type="button"
                                     className="btn-ghost text-[11.5px] h-8 px-2 text-status-blocked hover:bg-status-blocked/10"
                                     onClick={() => setRemoveMeetingFileId(meeting.id)}
-                                    disabled={isUploadingActa || setMinutesFilePending}
+                                    disabled={setMinutesFilePending}
                                   >
                                     {setMinutesFilePending && removeMeetingFileId === meeting.id ? (
                                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -874,7 +845,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                               if (!meeting.minutesFileId) {
                                 return (
                                   <p className="text-[11.5px] text-muted-foreground">
-                                    No hay archivo vinculado. Usa “Subir acta” para cargar uno nuevo, o “Seleccionar archivo” para enlazar un archivo existente del proyecto.
+                                    No hay archivo vinculado. Hacé clic en “Vincular existente” para enlazar un archivo existente del proyecto.
                                   </p>
                                 )
                               }

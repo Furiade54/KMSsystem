@@ -53,7 +53,6 @@ import {
   CommentFileDialog,
   TransferDialog,
 } from '../components/project/ProjectExtraModals'
-import ConfirmReplaceActaModal from '../components/project/ConfirmReplaceActaModal'
 import ProjectTopicsTab from '../components/project/ProjectTopicsTab'
 import ProjectAportesTab from '../components/project/ProjectAportesTab'
 import ProjectActivityTab from '../components/project/ProjectActivityTab'
@@ -258,14 +257,6 @@ function ProjectDetailPage() {
   const [showFilePicker, setShowFilePicker] = useState(false)
   const [filePickerSearch, setFilePickerSearch] = useState('')
   const [removeMeetingFileId, setRemoveMeetingFileId] = useState<string | null>(null)
-  const [isUploadingActa, setIsUploadingActa] = useState(false)
-  const minutesUploadInputRef = useRef<HTMLInputElement | null>(null)
-  const [replaceActaState, setReplaceActaState] = useState<{
-    open: boolean
-    meetingId: string | null
-    file: File | null
-    previousFileId: string | null
-  }>({ open: false, meetingId: null, file: null, previousFileId: null })
   const [topicsPage, setTopicsPage] = useState(1)
   const topicsPageSize = 20
   const [topicsSearch, setTopicsSearch] = useState('')
@@ -1408,72 +1399,6 @@ function ProjectDetailPage() {
     },
   })
 
-  async function handleUploadActa(ev: React.ChangeEvent<HTMLInputElement>, meetingId: string) {
-    const file = ev.target.files?.[0]
-    if (ev.target) ev.target.value = ''
-    if (!file) return
-    const allMeetings = (meetingsQuery.data?.items ?? []) as any[]
-    const meeting = (allMeetings as any[]).find((m: any) => String(m.id) === String(meetingId))
-    const previousMinutesFileId: string | null | undefined = meeting?.minutesFileId ?? null
-    if (previousMinutesFileId) {
-      setReplaceActaState({
-        open: true,
-        meetingId,
-        file,
-        previousFileId: previousMinutesFileId,
-      })
-      return
-    }
-    await performUploadAndLinkActa({
-      meetingId,
-      file,
-      previousFileId: null,
-      replace: false,
-    })
-  }
-
-  async function performUploadAndLinkActa(opts: {
-    meetingId: string
-    file: File
-    previousFileId: string | null
-    replace: boolean
-  }) {
-    const { meetingId, file, previousFileId, replace } = opts
-    setIsUploadingActa(true)
-    try {
-      const uploaded = await uploadFile({ projectId, file })
-      await queryClient.invalidateQueries({ queryKey: ['project', 'files', projectId], exact: false })
-      await queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'file-picker', 'files', projectId], exact: false })
-      await setMeetingMinutesFileMutation.mutateAsync({
-        meetingId,
-        minutesFileId: uploaded.id,
-      })
-      if (replace && previousFileId) {
-        try {
-          await deleteFileMutation.mutateAsync(previousFileId)
-        } catch (_delErr) {
-          // fallthrough no-op
-        }
-      }
-      setPageToast({
-        kind: 'success',
-        title: replace && previousFileId ? 'Acta reemplazada' : 'Acta subida y vinculada',
-        message: replace && previousFileId
-          ? `“${uploaded.name}” reemplazó el acta anterior; el archivo anterior fue eliminado.`
-          : `“${uploaded.name}” se cargó correctamente y quedó enlazado a esta reunión.`,
-      })
-    } catch (err: any) {
-      setPageToast({
-        kind: 'error',
-        title: 'No se pudo subir el acta',
-        message:
-          err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
-      })
-    } finally {
-      setIsUploadingActa(false)
-    }
-  }
-
   function handleAddMeetingParticipant(meetingId: string) {
     const uid = newParticipantUserId.trim()
     if (!uid) {
@@ -2094,12 +2019,10 @@ function ProjectDetailPage() {
           newParticipantAttended={newParticipantAttended}
           setNewParticipantAttended={setNewParticipantAttended}
           members={membersQuery.data?.items}
-          isUploadingActa={isUploadingActa}
           setRemoveMeetingFileId={setRemoveMeetingFileId}
           removeMeetingFileId={removeMeetingFileId}
           setFilePickerSearch={setFilePickerSearch}
           setShowFilePicker={setShowFilePicker}
-          minutesUploadInputRef={minutesUploadInputRef}
           confirmDeleteMeeting={confirmDeleteMeeting}
           setConfirmDeleteMeeting={setConfirmDeleteMeeting}
           upsertParticipantPending={upsertMeetingParticipantMutation.isPending}
@@ -2125,7 +2048,6 @@ function ProjectDetailPage() {
           onRemoveParticipant={(meetingId, userId) =>
             removeMeetingParticipantMutation.mutate({ meetingId, userId })
           }
-          onUploadActa={handleUploadActa}
           onConfirmUnlinkActa={(meetingId) => {
             setMeetingMinutesFileMutation.mutate(
               { meetingId, minutesFileId: null },
@@ -2614,50 +2536,6 @@ function ProjectDetailPage() {
           setInviteSelectedUserId(null)
           setInviteSearch('')
           setInviteError('')
-        }}
-      />
-
-      <ConfirmReplaceActaModal
-        open={replaceActaState.open}
-        previousFile={(meetingFilesQuery.data ?? []).find((f) => f.id === replaceActaState.previousFileId) ?? null}
-        previousFileId={replaceActaState.previousFileId}
-        pending={isUploadingActa || setMeetingMinutesFileMutation.isPending || deleteFileMutation.isPending}
-        onClose={() => {
-          setReplaceActaState({ open: false, meetingId: null, file: null, previousFileId: null })
-        }}
-        onConfirmReplace={() => {
-          const s = replaceActaState
-          if (!s.meetingId || !s.file) return
-          setReplaceActaState({ ...s, open: false })
-          void performUploadAndLinkActa({
-            meetingId: s.meetingId,
-            file: s.file,
-            previousFileId: s.previousFileId,
-            replace: true,
-          }).finally(() => {
-            setReplaceActaState({ open: false, meetingId: null, file: null, previousFileId: null })
-          })
-        }}
-        onUnlinkFirst={() => {
-          const s = replaceActaState
-          const closeModal = () => setReplaceActaState({ open: false, meetingId: null, file: null, previousFileId: null })
-          if (!s.meetingId) {
-            closeModal()
-            return
-          }
-          setMeetingMinutesFileMutation.mutate(
-            { meetingId: s.meetingId, minutesFileId: null },
-            {
-              onSettled: () => {
-                closeModal()
-                setPageToast({
-                  kind: 'success',
-                  title: 'Acta desvinculada',
-                  message: 'Ahora podés subir la nueva versión sin borrar el acta anterior (quedará en Documentos).',
-                })
-              },
-            }
-          )
         }}
       />
 
