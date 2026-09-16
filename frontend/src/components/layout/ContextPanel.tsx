@@ -950,9 +950,7 @@ function FilePanel({
 
   const authUser = useAuthStore((s) => s.user)
   const currentUserId = authUser?.id
-  const canManageAllComments =
-    !!authUser?.isOrganizationAdmin ||
-    !!authUser?.permissions?.has('comentarios.gestionar')
+  const canManageAllComments = !!authUser?.isOrgAdmin
 
   const editCommentMutation = useMutation({
     mutationFn: (payload: { commentId: string; content: string }) =>
