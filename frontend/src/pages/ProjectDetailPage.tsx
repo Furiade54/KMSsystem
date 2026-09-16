@@ -405,6 +405,12 @@ function ProjectDetailPage() {
     if (!rightPanelOpen) toggleRightPanel()
   }, [sp, projectId, selectedResource, rightPanelOpen, setSelectedResource, toggleRightPanel])
 
+  useEffect(() => {
+    if (selectedResource && !rightPanelOpen) {
+      toggleRightPanel()
+    }
+  }, [selectedResource?.id, selectedResource?.type, selectedResource?.projectId, rightPanelOpen, toggleRightPanel])
+
   const detail = projectQuery.data
   const project = detail?.project
   const stats = detail?.stats
