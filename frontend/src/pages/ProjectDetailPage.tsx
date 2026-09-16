@@ -405,12 +405,6 @@ function ProjectDetailPage() {
     if (!rightPanelOpen) toggleRightPanel()
   }, [sp, projectId, selectedResource, rightPanelOpen, setSelectedResource, toggleRightPanel])
 
-  useEffect(() => {
-    if (selectedResource && !rightPanelOpen) {
-      toggleRightPanel()
-    }
-  }, [selectedResource?.id, selectedResource?.type, selectedResource?.projectId, rightPanelOpen, toggleRightPanel])
-
   function handleSelectResourceOrTogglePanel(r: { type: 'file' | 'folder'; id: string }) {
     const isSame =
       selectedResource &&
