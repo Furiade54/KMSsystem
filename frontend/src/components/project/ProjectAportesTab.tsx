@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
   Search,
@@ -7,7 +7,6 @@ import {
   Loader2,
   AlertTriangle,
   Link2,
-  Upload,
   Paperclip,
   ChevronDown,
   Check,
@@ -181,23 +180,10 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
   const { showNewAporte, editingAporte, formNew, formEdit, confirmDeleteAporte, showLinkTopicModal } = forms
   const isEditing = editingAporte != null
   const form = isEditing ? formEdit : formNew
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [tipoOpen, setTipoOpen] = useState(false)
   const [estadoOpen, setEstadoOpen] = useState(false)
   const [prioridadOpen, setPrioridadOpen] = useState(false)
-
-  const handlePickFile = () => {
-    if (form.uploading) return
-    fileInputRef.current?.click()
-  }
-  const handleFileChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) callbacks.onSelectAttachedFile(file)
-    e.target.value = ''
-  }
-  const uploadAccept = form.type === 'IMAGEN' ? 'image/*' : '*'
-  const uploadLabel = form.type === 'IMAGEN' ? 'Subir imagen' : 'Subir archivo'
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -420,23 +406,16 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
                     {form.type === 'IMAGEN' ? 'Imagen adjunta (requerido)' : 'Archivo adjunto (requerido)'}
                   </label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept={uploadAccept}
-                    className="hidden"
-                    onChange={handleFileChanged}
-                  />
                   <div className="flex flex-col gap-2 rounded-md border border-dashed border-slate-300 dark:border-slate-600 p-3 bg-slate-50 dark:bg-slate-800/40">
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
-                        onClick={handlePickFile}
+                        onClick={callbacks.onOpenAttachFilePicker}
                         disabled={form.uploading}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-brand-600 hover:bg-brand-500 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Upload className="w-3.5 h-3.5" />
-                        {uploadLabel}
+                        <Link2 className="w-3.5 h-3.5" />
+                        Vincular existente
                       </button>
                       {form.attachedFileMeta && !form.uploading && (
                         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 bg-white dark:bg-slate-900">
@@ -477,9 +456,8 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
                     )}
                     {!form.uploading && !form.attachedFileMeta && (
                       <p className="text-[11px] text-slate-500">
-                        {form.type === 'IMAGEN'
-                          ? 'Formatos permitidos: JPG, PNG, GIF, WebP, SVG. El archivo se sube directamente al bucket S3 del proyecto.'
-                          : 'Selecciona cualquier archivo. Se subirá directamente al bucket S3 del proyecto y quedará registrado en Archivos.'}
+                        Vinculá un archivo que ya exista en la pestaña Documentos del proyecto.
+                        Si el archivo todavía no está subido, ingresá a Documentos y súbelo primero.
                       </p>
                     )}
                   </div>

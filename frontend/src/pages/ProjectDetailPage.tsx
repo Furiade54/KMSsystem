@@ -42,7 +42,7 @@ import {
   NewMeetingModal,
   ConfirmDeleteMeetingDialog,
 } from '../components/project/ProjectMeetingDialogs'
-import ProjectFilePickerModal from '../components/project/ProjectFilePickerModal'
+import ProjectFilePickerModal, { type PickerMode } from '../components/project/ProjectFilePickerModal'
 import {
   FolderContextMenu,
   FileContextMenu,
@@ -255,6 +255,7 @@ function ProjectDetailPage() {
   const [newParticipantRole, setNewParticipantRole] = useState('')
   const [newParticipantAttended, setNewParticipantAttended] = useState(false)
   const [showFilePicker, setShowFilePicker] = useState(false)
+  const [filePickerMode, setFilePickerMode] = useState<PickerMode>('meeting')
   const [filePickerSearch, setFilePickerSearch] = useState('')
   const [removeMeetingFileId, setRemoveMeetingFileId] = useState<string | null>(null)
   const [topicsPage, setTopicsPage] = useState(1)
@@ -1157,6 +1158,16 @@ function ProjectDetailPage() {
     }
   }
 
+  const openMeetingFilePicker = () => {
+    setFilePickerSearch('')
+    setFilePickerMode('meeting')
+    setShowFilePicker(true)
+  }
+  const openAporteFilePicker = () => {
+    setFilePickerSearch('')
+    setFilePickerMode('aporte')
+    setShowFilePicker(true)
+  }
   const onClearAttachedFile = () => {
     const editing = !!aporteForms.state.editingAporte
     const form = editing ? aporteForms.state.formEdit : aporteForms.state.formNew
@@ -1164,6 +1175,18 @@ function ProjectDetailPage() {
     form.setAttachedFileMeta(null)
     form.setUploadPercent(0)
     form.setUploading(false)
+    form.setError('')
+  }
+  const onPickExistingAttachedFile = (fileId: string, file: { name: string; sizeBytes?: number; mimeType?: string }) => {
+    const editing = !!aporteForms.state.editingAporte
+    const form = editing ? aporteForms.state.formEdit : aporteForms.state.formNew
+    form.setAttachedFileId(fileId)
+    form.setAttachedFileMeta({
+      id: fileId,
+      name: file.name,
+      sizeBytes: file.sizeBytes ?? 0,
+      mimeType: file.mimeType ?? null,
+    })
     form.setError('')
   }
 
@@ -2034,8 +2057,7 @@ function ProjectDetailPage() {
           members={membersQuery.data?.items}
           setRemoveMeetingFileId={setRemoveMeetingFileId}
           removeMeetingFileId={removeMeetingFileId}
-          setFilePickerSearch={setFilePickerSearch}
-          setShowFilePicker={setShowFilePicker}
+          onOpenFilePicker={openMeetingFilePicker}
           confirmDeleteMeeting={confirmDeleteMeeting}
           setConfirmDeleteMeeting={setConfirmDeleteMeeting}
           upsertParticipantPending={upsertMeetingParticipantMutation.isPending}
@@ -2190,6 +2212,8 @@ function ProjectDetailPage() {
             onUnlinkTopic,
             onSelectAttachedFile,
             onClearAttachedFile,
+            onOpenAttachFilePicker: openAporteFilePicker,
+            onPickExistingAttachedFile,
           }}
           linkTopicUi={{
             availableTopicsLoading: topicsQuery.isLoading,
@@ -2584,6 +2608,7 @@ function ProjectDetailPage() {
 
       <ProjectFilePickerModal
         open={showFilePicker}
+        pickerMode={filePickerMode}
         filePickerSearch={filePickerSearch}
         setFilePickerSearch={setFilePickerSearch}
         filesLoading={meetingFilesQuery.isLoading}
@@ -2595,17 +2620,23 @@ function ProjectDetailPage() {
           setShowFilePicker(false)
           setFilePickerSearch('')
         }}
-        onSelect={(fileId) => {
-          if (!expandedMeetingId || setMeetingMinutesFileMutation.isPending) return
-          setMeetingMinutesFileMutation.mutate(
-            { meetingId: expandedMeetingId, minutesFileId: fileId },
-            {
-              onSettled: () => {
-                setShowFilePicker(false)
-                setFilePickerSearch('')
-              },
-            }
-          )
+        onSelect={(fileId, file) => {
+          if (filePickerMode === 'meeting') {
+            if (!expandedMeetingId || setMeetingMinutesFileMutation.isPending) return
+            setMeetingMinutesFileMutation.mutate(
+              { meetingId: expandedMeetingId, minutesFileId: fileId },
+              {
+                onSettled: () => {
+                  setShowFilePicker(false)
+                  setFilePickerSearch('')
+                },
+              }
+            )
+          } else {
+            onPickExistingAttachedFile(fileId, file)
+            setShowFilePicker(false)
+            setFilePickerSearch('')
+          }
         }}
       />
     </div>

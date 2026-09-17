@@ -5,8 +5,11 @@ import { fileKind, formatBytes } from '@/services/files.service'
 import { formatRelativeTime } from '@/services/projects.service'
 import { colorForKind, iconForKind } from './fileHelpers'
 
+export type PickerMode = 'meeting' | 'aporte'
+
 export type ProjectFilePickerModalProps = {
   open: boolean
+  pickerMode: PickerMode
   filePickerSearch: string
   setFilePickerSearch: (v: string) => void
   filesLoading: boolean
@@ -15,12 +18,13 @@ export type ProjectFilePickerModalProps = {
   linkPending: boolean
   expandedMeetingId: string | null
   onClose: () => void
-  onSelect: (fileId: string) => void
+  onSelect: (fileId: string, file: ApiFile) => void
 }
 
 export default function ProjectFilePickerModal(props: ProjectFilePickerModalProps) {
   const {
     open,
+    pickerMode,
     filePickerSearch,
     setFilePickerSearch,
     filesLoading,
@@ -31,7 +35,19 @@ export default function ProjectFilePickerModal(props: ProjectFilePickerModalProp
     onClose,
     onSelect,
   } = props
+  const title =
+    pickerMode === 'meeting'
+      ? 'Seleccionar archivo del acta'
+      : 'Seleccionar archivo adjunto'
+  const subtitle =
+    pickerMode === 'meeting'
+      ? 'Escoge un archivo existente del proyecto para enlazarlo como acta de la reunión.'
+      : 'Escoge un archivo existente del proyecto para enlazarlo como adjunto del aporte.'
   if (!open) return null
+  const canClickRow = (): boolean => {
+    if (pickerMode === 'meeting') return Boolean(expandedMeetingId && !linkPending)
+    return !linkPending
+  }
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -43,10 +59,8 @@ export default function ProjectFilePickerModal(props: ProjectFilePickerModalProp
       <div className="card w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-surface-secondary/40">
           <div>
-            <h2 className="text-[15px] font-semibold text-foreground">Seleccionar archivo del acta</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Escoge un archivo existente del proyecto para enlazarlo como acta de la reunión.
-            </p>
+            <h2 className="text-[15px] font-semibold text-foreground">{title}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
           </div>
           <button
             type="button"
@@ -92,43 +106,46 @@ export default function ProjectFilePickerModal(props: ProjectFilePickerModalProp
               No hay archivos en este proyecto. Sube primero el archivo en la pestaña Documentos.
             </div>
           ) : (
-            (files ?? []).map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => {
-                  if (!expandedMeetingId || linkPending) return
-                  onSelect(f.id)
-                }}
-                disabled={linkPending}
-                className="w-full text-left p-2.5 flex items-center gap-3 rounded-md hover:bg-surface-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 transition-colors"
-              >
-                <div
-                  className={clsx(
-                    'w-8 h-8 rounded-md flex items-center justify-center shrink-0 ring-1 ring-black/5 shadow-sm',
-                    colorForKind(fileKind(f))
-                  )}
+            (files ?? []).map((f) => {
+              const rowDisabled = pickerMode === 'meeting' ? linkPending : false
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    if (!canClickRow()) return
+                    onSelect(f.id, f)
+                  }}
+                  disabled={rowDisabled}
+                  className="w-full text-left p-2.5 flex items-center gap-3 rounded-md hover:bg-surface-secondary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {(() => {
-                    const Ic = iconForKind(fileKind(f))
-                    return <Ic className="w-4 h-4 text-white/95" />
-                  })()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12.5px] font-medium text-foreground truncate">{f.name}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    {typeof f.sizeBytes === 'number' ? formatBytes(f.sizeBytes) : '—'}
-                    {f.extension ? ` · ${f.extension}` : ''}
-                    {f.createdAt ? ` · Subido ${formatRelativeTime(f.createdAt)}` : ''}
-                  </p>
-                </div>
-                {linkPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <Link2 className="w-4 h-4 text-muted-foreground" />
-                )}
-              </button>
-            ))
+                  <div
+                    className={clsx(
+                      'w-8 h-8 rounded-md flex items-center justify-center shrink-0 ring-1 ring-black/5 shadow-sm',
+                      colorForKind(fileKind(f))
+                    )}
+                  >
+                    {(() => {
+                      const Ic = iconForKind(fileKind(f))
+                      return <Ic className="w-4 h-4 text-white/95" />
+                    })()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12.5px] font-medium text-foreground truncate">{f.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {typeof f.sizeBytes === 'number' ? formatBytes(f.sizeBytes) : '—'}
+                      {f.extension ? ` · ${f.extension}` : ''}
+                      {f.createdAt ? ` · Subido ${formatRelativeTime(f.createdAt)}` : ''}
+                    </p>
+                  </div>
+                  {linkPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Link2 className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              )
+            })
           )}
         </div>
       </div>

@@ -81,8 +81,7 @@ export type ProjectMeetingsTabProps = {
 
   setRemoveMeetingFileId: (v: string | null) => void
   removeMeetingFileId: string | null
-  setFilePickerSearch: (v: string) => void
-  setShowFilePicker: (v: boolean) => void
+  onOpenFilePicker: () => void
 
   confirmDeleteMeeting: ApiMeeting | null
   setConfirmDeleteMeeting: (m: ApiMeeting | null) => void
@@ -147,8 +146,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
     members,
     setRemoveMeetingFileId,
     removeMeetingFileId,
-    setFilePickerSearch,
-    setShowFilePicker,
+    onOpenFilePicker,
     confirmDeleteMeeting,
     setConfirmDeleteMeeting,
     upsertParticipantPending,
@@ -810,8 +808,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                   type="button"
                                   className="btn-secondary text-[11.5px] h-8 px-2"
                                   onClick={() => {
-                                    setFilePickerSearch('')
-                                    setShowFilePicker(true)
+                                    onOpenFilePicker()
                                   }}
                                   disabled={setMinutesFilePending}
                                 >
