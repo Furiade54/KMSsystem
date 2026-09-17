@@ -1177,7 +1177,7 @@ function ProjectDetailPage() {
     form.setUploading(false)
     form.setError('')
   }
-  const onPickExistingAttachedFile = (fileId: string, file: { name: string; sizeBytes?: number; mimeType?: string }) => {
+  const onPickExistingAttachedFile = (fileId: string, file: { name: string; sizeBytes?: number | null; mimeType?: string | null }) => {
     const editing = !!aporteForms.state.editingAporte
     const form = editing ? aporteForms.state.formEdit : aporteForms.state.formNew
     form.setAttachedFileId(fileId)
