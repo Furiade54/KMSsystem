@@ -1,4 +1,3 @@
-import type { MutableRefObject } from 'react'
 import { useState } from 'react'
 import clsx from 'clsx'
 import {
