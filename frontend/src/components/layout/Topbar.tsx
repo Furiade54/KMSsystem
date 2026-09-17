@@ -57,7 +57,7 @@ export default function Topbar() {
             <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold text-sm">
               K
             </div>
-            <span className="font-semibold text-foreground hidden sm:inline">KMS</span>
+            <span className="font-semibold text-foreground hidden sm:inline">ISTCloud KMS</span>
           </div>
           <form onSubmit={submitSearch} className="ml-4 relative hidden md:block w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />

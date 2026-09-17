@@ -90,7 +90,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 mb-4">
             <Lock className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Bienvenido al KMS</h1>
+          <h1 className="text-2xl font-bold text-foreground">ISTCloud KMS</h1>
           <p className="text-muted-foreground mt-2">
             Sistema de Gestión del Conocimiento
           </p>
