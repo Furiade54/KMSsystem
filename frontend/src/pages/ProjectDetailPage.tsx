@@ -489,7 +489,7 @@ function ProjectDetailPage() {
     queryFn: async () => {
       const page = await fetchFiles({
         projectId,
-        folderId: undefined,
+        folderId: 'all',
         page: 1,
         pageSize: 500,
         search: filePickerSearch.trim() || undefined,

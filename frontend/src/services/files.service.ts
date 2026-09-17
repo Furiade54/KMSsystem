@@ -70,7 +70,7 @@ export function formatBytes(bytes: number | null | undefined): string {
 
 export async function fetchFiles(params: {
   projectId?: string
-  folderId?: string | null
+  folderId?: string | 'all' | null
   search?: string
   page?: number
   pageSize?: number
