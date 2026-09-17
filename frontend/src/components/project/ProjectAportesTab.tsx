@@ -262,7 +262,7 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
           }}
           formatRelativeTime={formatRelativeTime}
         />
-        {listUi.total && listUi.total > (listUi.items?.length ?? 0) && (
+        {listUi.total != null && listUi.total > (listUi.items?.length ?? 0) && (
           <div className="mt-3 flex items-center justify-center gap-2">
             <button
               type="button"

@@ -500,6 +500,20 @@ function ProjectDetailPage() {
     staleTime: 60_000,
   })
 
+  const masterFilesQuery = useQuery<PaginatedData<ApiFile>>({
+    queryKey: ['project', 'master-selector', 'files', projectId],
+    queryFn: () =>
+      fetchFiles({
+        projectId,
+        folderId: 'all',
+        page: 1,
+        pageSize: 500,
+      }),
+    enabled: Boolean(projectId) && showMasterSelector,
+    staleTime: 60_000,
+    retry: 1,
+  })
+
   const topicsQuery = useQuery({
     queryKey: [
       'project',
@@ -2379,8 +2393,8 @@ function ProjectDetailPage() {
         masterSelectedFileId={masterSelectedFileId}
         setMasterSelectedFileId={setMasterSelectedFileId}
         folderTree={folderTree}
-        filesIsLoading={filesIsLoading}
-        filesItems={filesQuery.data?.items}
+        filesIsLoading={masterFilesQuery.isLoading && masterFilesQuery.fetchStatus !== 'idle'}
+        filesItems={masterFilesQuery.data?.items}
         designatePending={designateMasterMutation.isPending}
         onClose={() => setShowMasterSelector(false)}
         onSubmit={handleMasterDesignateSubmit}
