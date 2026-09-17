@@ -23,7 +23,6 @@ import {
   CornerDownLeft,
   Pencil,
   Trash2,
-  X as XIcon,
 } from 'lucide-react'
 import {
   useUIStore,
