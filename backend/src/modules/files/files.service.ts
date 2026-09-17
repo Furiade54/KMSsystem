@@ -302,11 +302,13 @@ export async function listFiles(
   cReq.input('projectId', sql.UniqueIdentifier, params.projectId)
   const folderRaw = params.folderId === undefined ? 'root' : params.folderId
   const folderNormalized = folderRaw === '' ? 'root' : folderRaw
-  if (folderNormalized === 'root' || folderNormalized == null) {
-    where.push('a.IdCarpeta IS NULL')
-  } else {
-    where.push('a.IdCarpeta=@folderId')
-    cReq.input('folderId', sql.UniqueIdentifier, folderNormalized)
+  if (folderNormalized !== 'all') {
+    if (folderNormalized === 'root' || folderNormalized == null) {
+      where.push('a.IdCarpeta IS NULL')
+    } else {
+      where.push('a.IdCarpeta=@folderId')
+      cReq.input('folderId', sql.UniqueIdentifier, folderNormalized)
+    }
   }
   if (params.search) {
     where.push('(a.Nombre LIKE @search)')
@@ -317,7 +319,7 @@ export async function listFiles(
   const total = Number(countRes.recordset[0].total)
   const dReq = pool.request()
   dReq.input('projectId', sql.UniqueIdentifier, params.projectId)
-  if (folderNormalized != null && folderNormalized !== 'root') dReq.input('folderId', sql.UniqueIdentifier, folderNormalized)
+  if (folderNormalized != null && folderNormalized !== 'root' && folderNormalized !== 'all') dReq.input('folderId', sql.UniqueIdentifier, folderNormalized)
   if (params.search) dReq.input('search', sql.NVarChar(300), `%${params.search}%`)
   dReq.input('offset', sql.Int, offset)
   dReq.input('limit', sql.Int, pageSize)
