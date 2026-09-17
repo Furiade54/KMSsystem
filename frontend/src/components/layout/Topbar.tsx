@@ -54,10 +54,19 @@ export default function Topbar() {
             {leftSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4 rotate-180" />}
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold text-sm">
-              K
+            <div className="w-8 h-8 rounded-lg bg-transparent flex items-center justify-center text-white font-bold text-sm overflow-hidden">
+              {import.meta.env.VITE_APP_LOGO ? (
+                <img
+                  src={import.meta.env.VITE_APP_LOGO}
+                  alt="Logo"
+                  className="w-full h-full object-contain p-0.5"
+                  onError={(e) => { (e.currentTarget.style.display = 'none') }}
+                />
+              ) : (
+                <span>K</span>
+              )}
             </div>
-            <span className="font-semibold text-foreground hidden sm:inline">ISTCloud KMS</span>
+            <span className="font-semibold text-foreground hidden sm:inline">KMS PHEnlinea.info</span>
           </div>
           <form onSubmit={submitSearch} className="ml-4 relative hidden md:block w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
