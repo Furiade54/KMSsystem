@@ -87,10 +87,19 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-background-secondary p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 mb-4">
-            <Lock className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-transparent mb-4 overflow-hidden">
+            {import.meta.env.VITE_APP_LOGO ? (
+              <img
+                src={import.meta.env.VITE_APP_LOGO}
+                alt="Logo"
+                className="w-full h-full object-contain p-1"
+                onError={(e) => { (e.currentTarget.style.display = 'none') }}
+              />
+            ) : (
+              <Lock className="w-8 h-8 text-white" />
+            )}
           </div>
-          <h1 className="text-2xl font-bold text-foreground">ISTCloud KMS</h1>
+          <h1 className="text-2xl font-bold text-foreground">KMS PHEnlinea.info</h1>
           <p className="text-muted-foreground mt-2">
             Sistema de Gestión del Conocimiento
           </p>
