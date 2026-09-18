@@ -10,9 +10,11 @@ RUN npm install --no-audit --no-fund --loglevel=error --prefix /app/packages/sha
 
 ARG VITE_API_URL=/api
 ARG VITE_APP_TITLE=KMS
+ARG VITE_APP_LOGO=/logos/PHEnlinea.svg
 
 ENV VITE_API_URL=${VITE_API_URL} \
-    VITE_APP_TITLE=${VITE_APP_TITLE}
+    VITE_APP_TITLE=${VITE_APP_TITLE} \
+    VITE_APP_LOGO=${VITE_APP_LOGO}
 
 RUN npm run build --prefix /app/frontend
 

@@ -59,6 +59,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
         VITE_APP_TITLE: ${VITE_APP_TITLE:-KMS}
+        VITE_APP_LOGO: ${VITE_APP_LOGO:-/logos/PHEnlinea.svg}
     image: kms/frontend:latest
     container_name: kms-frontend
     restart: unless-stopped
