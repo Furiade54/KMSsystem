@@ -45,7 +45,7 @@ contributionsRouter.patch(
 contributionsRouter.delete(
   '/:contributionId',
   requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.editar'),
+  requirePermission('aportes.eliminar'),
   deleteContributionEndpoint,
 )
 
