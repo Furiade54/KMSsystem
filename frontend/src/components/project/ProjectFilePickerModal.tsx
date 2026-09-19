@@ -5,7 +5,7 @@ import { fileKind, formatBytes } from '@/services/files.service'
 import { formatRelativeTime } from '@/services/projects.service'
 import { colorForKind, iconForKind } from './fileHelpers'
 
-export type PickerMode = 'meeting' | 'aporte'
+export type PickerMode = 'meeting' | 'aporte' | 'topic-item'
 
 export type ProjectFilePickerModalProps = {
   open: boolean
@@ -38,11 +38,15 @@ export default function ProjectFilePickerModal(props: ProjectFilePickerModalProp
   const title =
     pickerMode === 'meeting'
       ? 'Seleccionar archivo del acta'
-      : 'Seleccionar archivo adjunto'
+      : pickerMode === 'topic-item'
+        ? 'Vincular documento al concepto'
+        : 'Seleccionar archivo adjunto'
   const subtitle =
     pickerMode === 'meeting'
       ? 'Escoge un archivo existente del proyecto para enlazarlo como acta de la reunión.'
-      : 'Escoge un archivo existente del proyecto para enlazarlo como adjunto del aporte.'
+      : pickerMode === 'topic-item'
+        ? 'Escoge un documento existente del proyecto para enlazarlo como referencia del concepto.'
+        : 'Escoge un archivo existente del proyecto para enlazarlo como adjunto del aporte.'
   if (!open) return null
   const canClickRow = (): boolean => {
     if (pickerMode === 'meeting') return Boolean(expandedMeetingId && !linkPending)

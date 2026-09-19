@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import clsx from 'clsx'
 import {
   Search,
@@ -10,13 +11,18 @@ import {
   Loader2,
   X,
   AlertTriangle,
+  AlertCircle,
+  RefreshCw,
   Users,
   CheckCircle2,
   UserPlus,
   ListChecks,
   Circle,
+  Paperclip,
+  FileText,
 } from 'lucide-react'
-import type { ApiTopic, ApiTopicItem, ApiTopicItemStatus, ApiTopicStatus } from '@/services/project-topics.service'
+import { formatBytes } from '@/services/files.service'
+import type { ApiTopic, ApiTopicItem, ApiTopicItemFile, ApiTopicItemStatus, ApiTopicStatus } from '@/services/project-topics.service'
 import { initials, topicItemStatusBadgeClass, topicItemStatusLabel, topicStatusBadgeClass, topicStatusLabel } from './fileHelpers'
 import type {
   TopicCallbacks,
@@ -65,12 +71,17 @@ export type ProjectTopicsTabProps = {
   pending: TopicMutationsPending
   callbacks: TopicCallbacks
 
+  itemFilesCache: Map<string, ApiTopicItemFile[]>
+  itemFilesLoading: Set<string>
+  itemFilesError: Map<string, string>
+
   canEditTopics: boolean
   canDeleteTopics: boolean
   canAddTopicItems: boolean
   canEditTopicItems: boolean
   canDeleteTopicItems: boolean
   canAssignItemMembers: boolean
+  canLinkItemFiles: boolean
 
   formatRelativeTime: (iso: string | null | undefined) => string
 }
@@ -90,6 +101,10 @@ export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
     pending,
     callbacks,
   } = props
+
+  const itemFilesCache = props.itemFilesCache
+  const itemFilesLoading = props.itemFilesLoading
+  const itemFilesError = props.itemFilesError
 
   const topicsSearch = topicFilters.topicsSearch
   const setTopicsSearch = topicFilters.setTopicsSearch
@@ -149,6 +164,7 @@ export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
   const canEditTopicItems = props.canEditTopicItems
   const canDeleteTopicItems = props.canDeleteTopicItems
   const canAssignItemMembers = props.canAssignItemMembers
+  const canLinkItemFiles = props.canLinkItemFiles
 
   const topicItemsSearch = topicItemFilters.topicItemsSearch
   const setTopicItemsSearch = topicItemFilters.setTopicItemsSearch
@@ -209,6 +225,22 @@ export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
   const assignItemMemberPending = pending.assignItemMemberPending
   const onUnassignItemMember = callbacks.onUnassignItemMember
   const unassignItemMemberPending = pending.unassignItemMemberPending
+  const linkTopicItemFilePending = pending.linkTopicItemFilePending
+  const unlinkTopicItemFilePending = pending.unlinkTopicItemFilePending
+  const onOpenFilePickerForItem = callbacks.onOpenFilePickerForItem
+  const onUnlinkItemFile = callbacks.onUnlinkItemFile
+  const onGotoLinkedFile = callbacks.onGotoLinkedFile
+  const forceReloadLinkedFiles = callbacks.forceReloadLinkedFiles
+
+  const loadFilesForItem = useCallback(async (topicId: string, itemId: string, force = false) => {
+    if (force) {
+      forceReloadLinkedFiles(topicId, itemId)
+      return
+    }
+    const key = `${topicId}__${itemId}`
+    if (itemFilesCache.has(key)) return
+    forceReloadLinkedFiles(topicId, itemId)
+  }, [forceReloadLinkedFiles, itemFilesCache])
 
   const managingMembersItem =
     topicItemsItems?.find((i) => i.id === managingMembersForItemId) ?? null
@@ -526,8 +558,114 @@ export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
                                     </span>
                                   ) : null}
                                 </div>
+                                {(() => {
+                                  const key = `${expandedTopicId}__${item.id}`
+                                  const files = itemFilesCache.get(key)
+                                  const isLoadingFiles = itemFilesLoading.has(item.id)
+                                  const hasError = itemFilesError.has(item.id)
+                                  const errorMsg = itemFilesError.get(item.id) ?? null
+                                  if (!files && !isLoadingFiles && !hasError && expandedTopicId) {
+                                    const tid = expandedTopicId as string
+                                    const iid = item.id
+                                    queueMicrotask(() => {
+                                      void loadFilesForItem(tid, iid, false)
+                                    })
+                                  }
+                                  if (
+                                    (!files || files.length === 0) &&
+                                    !isLoadingFiles &&
+                                    !hasError &&
+                                    !canLinkItemFiles
+                                  ) {
+                                    return null
+                                  }
+                                  const canRenderAny =
+                                    (files && files.length > 0) ||
+                                    isLoadingFiles ||
+                                    hasError ||
+                                    canLinkItemFiles
+                                  if (!canRenderAny) return null
+                                  return (
+                                    <div className="mt-2.5 space-y-1.5">
+                                      {hasError ? (
+                                        <div className="inline-flex items-center gap-1.5 text-[11px] text-status-blocked/90 max-w-[98%]">
+                                          <AlertCircle className="w-3 h-3 shrink-0" />
+                                          <span className="truncate">
+                                            {errorMsg || 'Error al cargar documentos vinculados'}
+                                          </span>
+                                          {expandedTopicId ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => loadFilesForItem(expandedTopicId as string, item.id, true)}
+                                              className="btn-ghost p-0.5 h-5 w-5 rounded text-brand-600 hover:bg-brand-500/10 shrink-0"
+                                              title="Reintentar"
+                                            >
+                                              <RefreshCw className="w-3 h-3" />
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      ) : files && files.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {files.map((f) => (
+                                            <div
+                                              key={f.id}
+                                              onClick={() => onGotoLinkedFile(f.fileId)}
+                                              className="inline-flex items-center gap-1.5 max-w-[98%] rounded-md bg-surface-secondary/80 ring-1 ring-black/5 px-2 py-1 pr-1 cursor-pointer hover:bg-brand-500/10 hover:ring-brand-500/40 transition-colors"
+                                              title={
+                                                `${f.fileName || f.fileId} — Click para ubicar en Documentos`
+                                              }
+                                            >
+                                              <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
+                                              <span className="truncate text-[11px] text-foreground/85 max-w-[220px]">
+                                                {f.fileName || '(sin nombre)'}
+                                              </span>
+                                              {f.fileSizeBytes != null && typeof f.fileSizeBytes === 'number' ? (
+                                                <span className="text-[10px] text-muted-foreground/70 shrink-0">
+                                                  {formatBytes(f.fileSizeBytes)}
+                                                </span>
+                                              ) : null}
+                                              {canLinkItemFiles && !unlinkTopicItemFilePending ? (
+                                                <button
+                                                  type="button"
+                                                  title="Desvincular documento"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    onUnlinkItemFile(item, f)
+                                                  }}
+                                                  className="btn-ghost inline-flex items-center justify-center p-0.5 rounded text-muted-foreground/80 hover:text-status-blocked hover:bg-status-blocked/10 shrink-0"
+                                                >
+                                                  <X className="w-3 h-3" />
+                                                </button>
+                                              ) : unlinkTopicItemFilePending ? (
+                                                <Loader2 className="w-3 h-3 animate-spin text-muted-foreground shrink-0" />
+                                              ) : null}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : isLoadingFiles ? (
+                                        <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                          Cargando documentos vinculados…
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  )
+                                })()}
                               </div>
                               <div className="flex items-center gap-0.5 shrink-0">
+                                {canLinkItemFiles && (
+                                  <button
+                                    className="btn-ghost p-1 rounded-md h-7 w-7 text-muted-foreground hover:text-brand-600 hover:bg-brand-500/10 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus:outline-none"
+                                    title="Vincular documento existente"
+                                    onClick={() => onOpenFilePickerForItem(item)}
+                                  >
+                                    {linkTopicItemFilePending ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Paperclip className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                )}
                                 {canAssignItemMembers && (
                                   <button
                                     className="btn-ghost p-1 rounded-md h-7 w-7 text-muted-foreground hover:text-brand-600 hover:bg-brand-500/10 focus-visible:ring-2 focus-visible:ring-brand-500/60 focus:outline-none"

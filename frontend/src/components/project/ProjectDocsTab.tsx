@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import clsx from 'clsx'
 import {
   FolderKanban,
@@ -67,6 +67,8 @@ export type ProjectDocsTabProps = {
   selectedId: string | undefined
   selectedType: SelectedResourceType | undefined
   projectId: string
+  highlightFileId: string | null
+  forceExpandFolderIds: Set<string> | null
 }
 
 export default function ProjectDocsTab(props: ProjectDocsTabProps) {
@@ -102,7 +104,19 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
     selectedId,
     selectedType,
     projectId,
+    highlightFileId,
+    forceExpandFolderIds,
   } = props
+
+  const fileRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map())
+
+  useEffect(() => {
+    if (!highlightFileId) return
+    const ref = fileRowRefs.current.get(highlightFileId)
+    if (ref) {
+      ref.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [highlightFileId, filesItems])
 
   return (
     <div
@@ -176,6 +190,7 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
                     depth={0}
                     selectedFolderId={selectedFolderId}
                     docMaestroCarpetaId={docMaestroCarpetaId ?? null}
+                    forceExpandIds={forceExpandFolderIds}
                     onSelect={(n) => {
                       setSelectedFolderId(n.id)
                       setSelectedResource({
@@ -562,9 +577,14 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
                       file.s3VersionId && file.s3VersionId.length > 0
                         ? (file.s3VersionId.length <= 6 ? file.s3VersionId : `${file.s3VersionId.slice(0, 6)}…`)
                         : null
+                    const isHighlighted = highlightFileId === file.id
                     return (
                       <tr
                         key={`file-${file.id}`}
+                        ref={(el) => {
+                          if (el) fileRowRefs.current.set(file.id, el)
+                          else fileRowRefs.current.delete(file.id)
+                        }}
                         onClick={() =>
                           setSelectedResource({ type: 'file', id: file.id, projectId })
                         }
@@ -588,7 +608,8 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
                           'border-b border-border/45 cursor-pointer group transition-all h-8',
                           selected
                             ? 'bg-brand-500/12 hover:bg-brand-500/16'
-                            : 'hover:bg-surface-secondary/60'
+                            : 'hover:bg-surface-secondary/60',
+                          isHighlighted && 'bg-amber-300/25 ring-2 ring-inset ring-amber-500/70'
                         )}
                         style={
                           selected

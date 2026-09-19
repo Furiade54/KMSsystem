@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import type { FolderNode } from '@/services/folders.service'
 import {
@@ -86,6 +86,7 @@ export function FolderTreeItem({
   onSelect,
   onContextMenu,
   docMaestroCarpetaId,
+  forceExpandIds,
 }: {
   node: FolderNode
   depth: number
@@ -93,9 +94,17 @@ export function FolderTreeItem({
   onSelect: (node: FolderNode) => void
   onContextMenu?: (e: React.MouseEvent, node: FolderNode) => void
   docMaestroCarpetaId?: string | null
+  forceExpandIds?: Set<string> | null
 }) {
   const [open, setOpen] = useState(depth === 0)
+  useEffect(() => {
+    if (forceExpandIds && forceExpandIds.has(node.id)) {
+      setOpen(true)
+    }
+  }, [forceExpandIds, node.id])
   const hasChildren = node.children.length > 0
+  const isForcedOpen = forceExpandIds ? forceExpandIds.has(node.id) : false
+  const showChildren = (open || isForcedOpen) && hasChildren
   const isSelected = selectedFolderId === node.id
   const isDocMaster =
     docMaestroCarpetaId != null &&
@@ -192,8 +201,8 @@ export function FolderTreeItem({
           </span>
         )}
       </button>
-      {open &&
-        node.children.map((child) => (
+      {showChildren
+        ? node.children.map((child) => (
           <FolderTreeItem
             key={child.id}
             node={child}
@@ -202,8 +211,10 @@ export function FolderTreeItem({
             onSelect={onSelect}
             onContextMenu={onContextMenu}
             docMaestroCarpetaId={docMaestroCarpetaId ?? null}
+            forceExpandIds={forceExpandIds}
           />
-        ))}
+        ))
+        : null}
     </div>
   )
 }

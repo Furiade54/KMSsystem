@@ -10,10 +10,13 @@ import {
   getProjectMembersForTopicItem,
   getTopic,
   getTopicItem,
+  listTopicItemFiles,
   listTopicItemMembers,
   listTopicItems,
   listTopics,
+  linkFileToTopicItem,
   unassignMemberFromItem,
+  unlinkFileFromTopicItem,
   updateTopic,
   updateTopicItem,
 } from './project-topics.controller'
@@ -40,5 +43,9 @@ topicsRouter.get('/:topicId/items/:itemId/miembros', requireResourcePermission('
 topicsRouter.get('/:topicId/items/:itemId/miembros/disponibles', requireResourcePermission('PROJECT', 'VER', projectIdFromParams), getProjectMembersForTopicItem)
 topicsRouter.post('/:topicId/items/:itemId/miembros', requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams), assignMemberToItem)
 topicsRouter.delete('/:topicId/items/:itemId/miembros/:assignmentId', requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams), unassignMemberFromItem)
+
+topicsRouter.get('/:topicId/items/:itemId/archivos', requireResourcePermission('PROJECT', 'VER', projectIdFromParams), listTopicItemFiles)
+topicsRouter.post('/:topicId/items/:itemId/archivos/:fileId', requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams), linkFileToTopicItem)
+topicsRouter.delete('/:topicId/items/:itemId/archivos/:fileId', requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams), unlinkFileFromTopicItem)
 
 export default topicsRouter

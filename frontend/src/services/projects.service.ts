@@ -47,6 +47,7 @@ export interface ApiResponse<T> {
   success: boolean
   message?: string
   data: T
+  duplicated?: boolean
 }
 
 export interface CreateProjectPayload {

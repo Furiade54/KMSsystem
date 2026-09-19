@@ -1,4 +1,5 @@
-import type { ApiTopic, ApiTopicItem, ApiTopicItemStatus, ApiTopicStatus } from '@/services/project-topics.service'
+import type { ApiFile } from '@/services/files.service'
+import type { ApiTopic, ApiTopicItem, ApiTopicItemFile, ApiTopicItemStatus, ApiTopicStatus } from '@/services/project-topics.service'
 
 export type TopicFiltersState = {
   topicsSearch: string
@@ -87,6 +88,8 @@ export type TopicMutationsPending = {
   deleteTopicItemPending: boolean
   assignItemMemberPending: boolean
   unassignItemMemberPending: boolean
+  linkTopicItemFilePending: boolean
+  unlinkTopicItemFilePending: boolean
 }
 
 export type TopicItemAvailableMember = {
@@ -110,4 +113,12 @@ export type TopicCallbacks = {
   onOpenManageMembersForItem: (item: ApiTopicItem) => void
   onAssignItemMember: (projectMemberId: string) => void
   onUnassignItemMember: (assignmentId: string) => void
+  onOpenFilePickerForItem: (item: ApiTopicItem) => void
+  onUnlinkItemFile: (item: ApiTopicItem, file: ApiTopicItemFile) => void
+  onGotoLinkedFile: (fileId: string) => void
+  fetchLinkedFilesForItem: (topicId: string, itemId: string) => Promise<ApiTopicItemFile[]>
+  forceReloadLinkedFiles: (topicId: string, itemId: string) => void
+  optimisticRemoveLinkedFile: (topicId: string, itemId: string, fileId: string) => void
+  filePickerFiles?: ApiFile[]
+  filePickerLoading?: boolean
 }

@@ -396,6 +396,18 @@ export interface ProjectTopicItemMember {
   assignedAt: string
 }
 
+export interface ProjectTopicItemFile {
+  id: string
+  topicItemId: string
+  fileId: string
+  fileName?: string | null
+  fileSizeBytes?: number | null
+  fileMimeType?: string | null
+  linkedByUserId?: string | null
+  linkedByUserName?: string | null
+  linkedAt: string
+}
+
 export type MeetingStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'HELD'
 
 export const DB_MEETING_STATUS = {
@@ -767,6 +779,7 @@ export interface ApiResponse<T> {
   message?: string
   error?: string
   errors?: Record<string, string[]>
+  duplicated?: boolean
 }
 
 export interface PaginationParams {
