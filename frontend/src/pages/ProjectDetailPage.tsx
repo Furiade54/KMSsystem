@@ -138,6 +138,7 @@ import {
 import {
   ApiTopic,
   ApiTopicItem,
+  ApiTopicItemFile,
   ApiTopicItemStatus,
   ApiTopicStatus,
   CreateTopicItemPayload,
@@ -150,9 +151,12 @@ import {
   deleteTopic as apiDeleteTopic,
   deleteTopicItem as apiDeleteTopicItem,
   fetchAvailableMembersForItem,
+  fetchTopicItemFiles,
   fetchTopicItems,
   fetchTopics,
+  linkFileToTopicItem,
   unassignMemberFromTopicItem,
+  unlinkFileFromTopicItem,
   updateTopic as apiUpdateTopic,
   updateTopicItem as apiUpdateTopicItem,
 } from '../services/project-topics.service'
@@ -257,6 +261,12 @@ function ProjectDetailPage() {
   const [showFilePicker, setShowFilePicker] = useState(false)
   const [filePickerMode, setFilePickerMode] = useState<PickerMode>('meeting')
   const [filePickerSearch, setFilePickerSearch] = useState('')
+  const [linkingTopicItemId, setLinkingTopicItemId] = useState<string | null>(null)
+  const [itemFilesCache, setItemFilesCache] = useState<Map<string, ApiTopicItemFile[]>>(new Map())
+  const [itemFilesLoading, setItemFilesLoading] = useState<Set<string>>(new Set())
+  const [itemFilesError, setItemFilesError] = useState<Map<string, string>>(new Map())
+  const [highlightFileId, setHighlightFileId] = useState<string | null>(null)
+  const [forceExpandFolderIds, setForceExpandFolderIds] = useState<Set<string> | null>(null)
   const [removeMeetingFileId, setRemoveMeetingFileId] = useState<string | null>(null)
   const [topicsPage, setTopicsPage] = useState(1)
   const topicsPageSize = 20
@@ -496,7 +506,7 @@ function ProjectDetailPage() {
       })
       return page.items
     },
-    enabled: Boolean(projectId) && (showFilePicker || Boolean(expandedMeetingId && meetingPanelTab === 'file')),
+    enabled: Boolean(projectId) && (showFilePicker || Boolean(expandedMeetingId && meetingPanelTab === 'file') || Boolean(linkingTopicItemId)),
     staleTime: 60_000,
   })
 
@@ -1182,6 +1192,17 @@ function ProjectDetailPage() {
     setFilePickerMode('aporte')
     setShowFilePicker(true)
   }
+  const openTopicItemFilePicker = (itemId: string) => {
+    setLinkingTopicItemId(itemId)
+    setFilePickerSearch('')
+    setFilePickerMode('topic-item')
+    setShowFilePicker(true)
+  }
+  const closeTopicItemFilePicker = () => {
+    setLinkingTopicItemId(null)
+    setFilePickerSearch('')
+    setShowFilePicker(false)
+  }
   const onClearAttachedFile = () => {
     const editing = !!aporteForms.state.editingAporte
     const form = editing ? aporteForms.state.formEdit : aporteForms.state.formNew
@@ -1289,6 +1310,167 @@ function ProjectDetailPage() {
   const openNewTopicItem = () => topicItemForms.openNewTopicItem()
   const openEditTopicItem = (item: ApiTopicItem) => topicItemForms.openEditTopicItem(item)
   const openManageMembersForItem = (item: ApiTopicItem) => topicItemForms.openManageMembersForItem(item)
+
+  const loadFilesForItem = useCallback(async (topicId: string, itemId: string, force = false) => {
+    const key = `${topicId}__${itemId}`
+    if (!force && itemFilesCache.has(key)) return
+    setItemFilesLoading((prev) => new Set(prev).add(itemId))
+    setItemFilesError((prev) => {
+      const next = new Map(prev)
+      next.delete(itemId)
+      return next
+    })
+    try {
+      const list = await fetchTopicItemFiles(projectId, topicId, itemId)
+      setItemFilesCache((prev) => {
+        const next = new Map(prev)
+        next.set(key, list ?? [])
+        return next
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No se pudieron cargar los documentos vinculados'
+      setItemFilesError((prev) => {
+        const next = new Map(prev)
+        next.set(itemId, msg)
+        return next
+      })
+      setItemFilesCache((prev) => {
+        const next = new Map(prev)
+        next.set(key, [])
+        return next
+      })
+      console.warn('[ProjectDetailPage] loadFilesForItem failed:', topicId, itemId, e)
+    } finally {
+      setItemFilesLoading((prev) => {
+        const next = new Set(prev)
+        next.delete(itemId)
+        return next
+      })
+    }
+  }, [projectId, itemFilesCache])
+
+  const optimisticRemoveLinkedFile = useCallback((topicId: string, itemId: string, fileId: string) => {
+    const key = `${topicId}__${itemId}`
+    setItemFilesCache((prev) => {
+      const snapshot = prev.get(key) ?? []
+      const nextArr = snapshot.filter((f) => f.fileId !== fileId)
+      const next = new Map(prev)
+      next.set(key, nextArr)
+      return next
+    })
+  }, [])
+
+  const forceReloadLinkedFiles = useCallback((topicId: string, itemId: string) => {
+    void loadFilesForItem(topicId, itemId, true)
+  }, [loadFilesForItem])
+
+  const onGotoLinkedFile = useCallback(async (fileId: string) => {
+    const pools: Array<Iterable<ApiFile> | undefined | null> = [
+      filesQuery.data?.items,
+      meetingFilesQuery.data,
+      masterFilesQuery.data?.items,
+    ]
+    let file: ApiFile | null = null
+    const target = fileId.toLowerCase()
+    const findIn = (pool: Iterable<ApiFile>): ApiFile | null => {
+      for (const item of pool) {
+        if (item.id.toLowerCase() === target) return item
+      }
+      return null
+    }
+    for (const pool of pools) {
+      if (pool) {
+        const found = findIn(pool)
+        if (found) { file = found; break }
+      }
+    }
+    if (!file) {
+      try {
+        const all = await fetchFiles({ projectId, folderId: 'all', page: 1, pageSize: 500 })
+        for (const it of all.items) {
+          if (it.id.toLowerCase() === target) { file = it; break }
+        }
+      } catch (_e) {
+        // no se pudo, continuamos sin carpeta
+      }
+    }
+    const fId = file?.folderId ?? null
+    const chain: string[] = []
+    if (fId) {
+      const seen = new Set<string>()
+      let cur: string | null = fId
+      while (cur && !seen.has(cur)) {
+        seen.add(cur)
+        chain.push(cur)
+        const node = flatFolderById.get(cur)
+        if (!node || !node.parentId) break
+        cur = node.parentId
+      }
+    } else {
+      setPageToast({ kind: 'error', title: 'No se pudo ubicar el archivo', message: 'No se pudo ubicar la carpeta del archivo. Pruebe abriendo la pestaña Documentos primero y vuelva a intentar.' })
+    }
+    const ancestorSet = chain.length ? new Set(chain) : null
+    setForceExpandFolderIds(ancestorSet)
+    setSelectedFolderId(fId)
+    setActiveTab('docs')
+    setHighlightFileId(fileId)
+    window.setTimeout(() => {
+      setHighlightFileId((curr) => (curr === fileId ? null : curr))
+    }, 4000)
+  }, [filesQuery.data, meetingFilesQuery.data, masterFilesQuery.data, flatFolderById, projectId, fetchFiles, setPageToast])
+
+  const linkTopicItemFileMutation = useMutation({
+    mutationFn: (payload: { topicId: string; itemId: string; fileId: string }) =>
+      linkFileToTopicItem(projectId, payload.topicId, payload.itemId, payload.fileId),
+    onSuccess: () => {
+      const topicId = topicItemForms.state.expandedTopicId
+      const itemId = linkingTopicItemId
+      if (topicId && itemId) {
+        queryClient.invalidateQueries({
+          queryKey: ['project', 'topic', 'item', 'files', projectId, topicId, itemId],
+        })
+        forceReloadLinkedFiles(topicId, itemId)
+      }
+      closeTopicItemFilePicker()
+      setPageToast({ kind: 'success', title: 'Documento vinculado', message: 'El documento se vinculó al concepto.' })
+    },
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo vincular el documento',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido.',
+      })
+    },
+  })
+
+  const unlinkTopicItemFileMutation = useMutation({
+    mutationFn: (payload: { topicId: string; itemId: string; fileId: string }) =>
+      unlinkFileFromTopicItem(projectId, payload.topicId, payload.itemId, payload.fileId),
+    onMutate: (vars) => {
+      optimisticRemoveLinkedFile(vars.topicId, vars.itemId, vars.fileId)
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({
+        queryKey: ['project', 'topic', 'item', 'files', projectId, vars.topicId, vars.itemId],
+      })
+      setPageToast({ kind: 'success', title: 'Documento desvinculado', message: 'Se retiró la referencia del concepto.' })
+    },
+    onError: (err: any, vars) => {
+      forceReloadLinkedFiles(vars.topicId, vars.itemId)
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo desvincular',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido.',
+      })
+    },
+  })
+
+  const onPickTopicItemFile = (fileId: string) => {
+    const topicId = topicItemForms.state.expandedTopicId
+    const itemId = linkingTopicItemId
+    if (!topicId || !itemId) return
+    linkTopicItemFileMutation.mutate({ topicId, itemId, fileId })
+  }
 
   const handleSubmitTopicItem = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1989,6 +2171,8 @@ function ProjectDetailPage() {
           selectedId={selectedId}
           selectedType={selectedType as 'file' | 'folder' | undefined}
           projectId={projectId}
+          highlightFileId={highlightFileId}
+          forceExpandFolderIds={forceExpandFolderIds}
         />
       )}
 
@@ -2161,6 +2345,8 @@ function ProjectDetailPage() {
             deleteTopicItemPending: deleteTopicItemMutation.isPending,
             assignItemMemberPending: assignItemMemberMutation.isPending,
             unassignItemMemberPending: unassignItemMemberMutation.isPending,
+            linkTopicItemFilePending: linkTopicItemFileMutation.isPending,
+            unlinkTopicItemFilePending: unlinkTopicItemFileMutation.isPending,
           }}
           callbacks={{
             onNewTopic: openNewTopic,
@@ -2174,13 +2360,25 @@ function ProjectDetailPage() {
             onOpenManageMembersForItem: openManageMembersForItem,
             onAssignItemMember: (pmId) => { if (topicItemForms.state.expandedTopicId && topicItemForms.memberState.managingMembersForItemId) assignItemMemberMutation.mutate({ topicId: topicItemForms.state.expandedTopicId, itemId: topicItemForms.memberState.managingMembersForItemId, projectMemberId: pmId }) },
             onUnassignItemMember: (assignmentId) => { if (topicItemForms.state.expandedTopicId && topicItemForms.memberState.managingMembersForItemId) unassignItemMemberMutation.mutate({ topicId: topicItemForms.state.expandedTopicId, itemId: topicItemForms.memberState.managingMembersForItemId, assignmentId }) },
+            onOpenFilePickerForItem: (item) => openTopicItemFilePicker(item.id),
+            onUnlinkItemFile: (item, f) => { if (topicItemForms.state.expandedTopicId) unlinkTopicItemFileMutation.mutate({ topicId: topicItemForms.state.expandedTopicId, itemId: item.id, fileId: f.fileId }) },
+            onGotoLinkedFile,
+            fetchLinkedFilesForItem: (topicId, itemId) => fetchTopicItemFiles(projectId, topicId, itemId),
+            forceReloadLinkedFiles,
+            optimisticRemoveLinkedFile,
+            filePickerFiles: meetingFilesQuery.data,
+            filePickerLoading: meetingFilesQuery.isLoading && meetingFilesQuery.fetchStatus !== 'idle',
           }}
+          itemFilesCache={itemFilesCache}
+          itemFilesLoading={itemFilesLoading}
+          itemFilesError={itemFilesError}
           canEditTopics={canEditTopics}
           canDeleteTopics={canDeleteTopics}
           canAddTopicItems={canEditTopics}
           canEditTopicItems={canEditTopics}
           canDeleteTopicItems={canDeleteTopics}
           canAssignItemMembers={canEditTopics}
+          canLinkItemFiles={canEditTopics}
           formatRelativeTime={formatRelativeTime}
         />
       )}
@@ -2646,6 +2844,8 @@ function ProjectDetailPage() {
                 },
               }
             )
+          } else if (filePickerMode === 'topic-item') {
+            onPickTopicItemFile(fileId)
           } else {
             onPickExistingAttachedFile(fileId, file)
             setShowFilePicker(false)

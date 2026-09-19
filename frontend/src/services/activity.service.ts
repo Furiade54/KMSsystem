@@ -15,6 +15,7 @@ export interface ActivityItem {
   occurredAt: string
   comment?: string | null
   commentId?: string | null
+  extra?: Record<string, unknown> | null
 }
 
 export interface ActivityResponse {
@@ -79,6 +80,45 @@ export function describeActivity(item: ActivityItem): {
   commentId?: string | null
 } {
   const userName = item.userFullName || item.userEmail || 'Usuario'
+  const extra = item.extra && typeof item.extra === 'object' ? item.extra : null
+
+  // Casos especiales: vincular/desvincular archivo a concepto de tema (prioridad sobre diccionario)
+  if (extra) {
+    const fileName = String((extra as any).fileName ?? '').trim() || null
+    const itemTitle = String((extra as any).itemTitle ?? '').trim() || null
+    const topicTitle = String((extra as any).topicTitle ?? '').trim() || null
+    if (fileName && itemTitle && topicTitle) {
+      const isUnlink = item.action === 'topic_item.archivo_desvinculado' ||
+        (item.resourceType === 'topic_item' && !!item.action && /desvincul/.test(item.action))
+      const isLink = !isUnlink && (
+        item.action === 'topic_item.archivo_vinculado' ||
+        (item.resourceType === 'topic_item' && !!item.action && /vincul/.test(item.action))
+      )
+      if (isLink) {
+        return {
+          user: userName,
+          actionPhrase: `vinculó el archivo`,
+          target: `${fileName} al concepto ${itemTitle} del tema ${topicTitle}`,
+          project: '—',
+          time: formatRelativeTime(item.occurredAt),
+          comment: null,
+          anchorKeyword: 'archivo',
+        }
+      }
+      if (isUnlink) {
+        return {
+          user: userName,
+          actionPhrase: `desvinculó el archivo`,
+          target: `${fileName} del concepto ${itemTitle} del tema ${topicTitle}`,
+          project: '—',
+          time: formatRelativeTime(item.occurredAt),
+          comment: null,
+          anchorKeyword: 'archivo',
+        }
+      }
+    }
+  }
+
   const dict = tryDictionary(item.action)
   const target = item.resourceName || (item.resourceType ? `[${item.resourceType}]` : 'recurso')
   let projectName = '—'

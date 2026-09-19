@@ -4,6 +4,7 @@ import {
   type PaginatedResult,
   type ProjectTopic,
   type ProjectTopicItem,
+  type ProjectTopicItemFile,
   type ProjectTopicItemMember,
   type TopicItemStatus,
   type TopicStatus,
@@ -12,7 +13,7 @@ import {
 } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { logAuditRecord } from '../../shared/db/audit'
-import { AppError, NotFoundError } from '../../shared/errors/AppError'
+import { AppError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
 import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
 
 type TopicRow = {
@@ -37,6 +38,31 @@ type TopicItemRow = {
   Orden: number
   FechaCreacion: Date
   FechaActualizacion: Date | null
+}
+
+type TopicItemFileRow = {
+  Id: string
+  IdTemaItem: string
+  IdArchivo: string
+  IdUsuarioVinculo: string | null
+  FechaVinculo: Date
+  Nombre?: string | null
+  Extension?: string | null
+  TamanioBytes?: number | null
+  TipoMime?: string | null
+  NombreUsuarioVinculo?: string | null
+  CorreoUsuarioVinculo?: string | null
+}
+
+function composeFileName(nombre: string | null | undefined, ext: string | null | undefined): string | null {
+  const n = (nombre ?? '').trim()
+  const e = (ext ?? '').trim()
+  if (!n && !e) return null
+  if (!n) return e || null
+  if (!e) return n || null
+  const extWithDot = '.' + e.toLowerCase()
+  if (n.toLowerCase().endsWith(extWithDot)) return n
+  return n + '.' + e
 }
 
 type TopicItemMemberRow = {
@@ -115,6 +141,23 @@ function mapTopicItemMember(r: TopicItemMemberRow): ProjectTopicItemMember {
     topicItemId: String(r.IdTemaItem),
     projectMemberId: String(r.IdMiembroProyecto),
     assignedAt: sqlLocalToIso(r.FechaAsignacion as any),
+  }
+}
+
+function mapTopicItemFile(r: TopicItemFileRow): ProjectTopicItemFile {
+  const fileName = composeFileName(r.Nombre, r.Extension)
+  const linkedByName = r.NombreUsuarioVinculo != null ? String(r.NombreUsuarioVinculo) : null
+  const linkedByMail = r.CorreoUsuarioVinculo != null ? String(r.CorreoUsuarioVinculo) : null
+  return {
+    id: String(r.Id),
+    topicItemId: String(r.IdTemaItem),
+    fileId: String(r.IdArchivo),
+    fileName,
+    fileSizeBytes: r.TamanioBytes != null ? Number(r.TamanioBytes) : null,
+    fileMimeType: r.TipoMime != null ? String(r.TipoMime) : null,
+    linkedByUserId: r.IdUsuarioVinculo ? String(r.IdUsuarioVinculo) : null,
+    linkedByUserName: linkedByName ?? linkedByMail ?? null,
+    linkedAt: sqlLocalToIso(r.FechaVinculo as any),
   }
 }
 
@@ -508,9 +551,11 @@ export async function deleteTopic(
 
     // Pre-cleanup for NO ACTION FKs (manual per project_memory):
     //   * ReunionesTemasVinculados (FK_RTV_Tema → NO_ACTION para evitar ciclos CASCADE)
-    //   * TemasProyectoItemMiembros → Items → Tema
+    //   * TemasProyectoItemArchivos → TemasProyectoItemMiembros → Items → Tema
     await del.query(`
       DELETE FROM dbo.ReunionesTemasVinculados WHERE IdTema = @topicId;
+      DELETE FROM dbo.TemasProyectoItemArchivos
+       WHERE IdTemaItem IN (SELECT Id FROM dbo.TemasProyectoItems WHERE IdTema = @topicId);
       DELETE FROM dbo.TemasProyectoItemMiembros
        WHERE IdTemaItem IN (SELECT Id FROM dbo.TemasProyectoItems WHERE IdTema = @topicId);
       DELETE FROM dbo.TemasProyectoItems WHERE IdTema = @topicId;
@@ -889,6 +934,7 @@ export async function deleteTopicItem(
     const del = pool.request()
     del.input('itemId', sql.UniqueIdentifier, itemId)
     await del.query(`
+      DELETE FROM dbo.TemasProyectoItemArchivos WHERE IdTemaItem = @itemId;
       DELETE FROM dbo.TemasProyectoItemMiembros WHERE IdTemaItem = @itemId;
       DELETE FROM dbo.TemasProyectoItems WHERE Id = @itemId;
     `)
@@ -1102,6 +1148,261 @@ export async function unassignMemberFromItem(
       resourceName: assignmentId,
       projectId,
       extra: { topicId },
+      req,
+    })
+    res.status(204).send()
+  } catch (err) {
+    next(err)
+  }
+}
+
+// ============================================================
+// ITEM -> ARCHIVOS VINCULADOS
+// ============================================================
+
+export async function listTopicItemFiles(
+  req: Request,
+  res: Response<ApiResponse<ProjectTopicItemFile[]>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.projectId || '')
+    const topicId = String(req.params.topicId || '')
+    const itemId = String(req.params.itemId || '')
+    await getTopicItemRowOrThrow(projectId, topicId, itemId, auth.organizationId)
+
+    const pool = await getDbPool()
+    const rows = await pool
+      .request()
+      .input('itemId', sql.UniqueIdentifier, itemId)
+      .query<TopicItemFileRow>(`
+        SELECT
+          v.Id,
+          v.IdTemaItem,
+          v.IdArchivo,
+          v.IdUsuarioVinculo,
+          v.FechaVinculo,
+          a.Nombre,
+          a.Extension,
+          a.Tamano               AS TamanioBytes,
+          a.TipoMime,
+          u.NombreCompleto        AS NombreUsuarioVinculo,
+          u.Correo                AS CorreoUsuarioVinculo
+        FROM      dbo.TemasProyectoItemArchivos v
+        LEFT JOIN dbo.Archivos a ON a.Id = v.IdArchivo
+        LEFT JOIN dbo.Usuarios u ON u.Id = v.IdUsuarioVinculo
+        WHERE v.IdTemaItem = @itemId
+        ORDER BY v.FechaVinculo ASC
+      `)
+    res.status(200).json({
+      success: true,
+      data: (rows.recordset as TopicItemFileRow[]).map(mapTopicItemFile),
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function linkFileToTopicItem(
+  req: Request,
+  res: Response<ApiResponse<ProjectTopicItemFile>>,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.projectId || '')
+    const topicId = String(req.params.topicId || '')
+    const itemId = String(req.params.itemId || '')
+    const fileId = String(req.params.fileId || '')
+    const itemRow = await getTopicItemRowOrThrow(projectId, topicId, itemId, auth.organizationId)
+
+    // Scope check: el archivo debe pertenecer al MISMO proyecto
+    // (no se pueden vincular archivos de otros proyectos)
+    const pool = await getDbPool()
+    const fileMeta = await pool
+      .request()
+      .input('fileId', sql.UniqueIdentifier, fileId)
+      .input('projectId', sql.UniqueIdentifier, projectId)
+      .query<{ IdProyecto: string | null; Nombre: string | null; Extension: string | null }>(`
+        SELECT IdProyecto, Nombre, Extension FROM dbo.Archivos WHERE Id = @fileId
+      `)
+    if (fileMeta.recordset.length === 0 || fileMeta.recordset[0].IdProyecto !== projectId) {
+      throw new ForbiddenError('El archivo no pertenece al proyecto del concepto')
+    }
+    const fileNameAudit =
+      composeFileName(fileMeta.recordset[0].Nombre, fileMeta.recordset[0].Extension) || fileId
+
+    const topicMeta = await pool
+      .request()
+      .input('topicId', sql.UniqueIdentifier, topicId)
+      .query<{ Titulo: string | null }>(`SELECT Titulo FROM dbo.TemasProyecto WHERE Id = @topicId`)
+    const topicTitle = String(topicMeta.recordset[0]?.Titulo || topicId)
+    const itemTitle = String(itemRow.Titulo || itemId)
+
+    // Insert (UQ (IdTemaItem, IdArchivo) evita doble vínculo)
+    await pool
+      .request()
+      .input('itemId', sql.UniqueIdentifier, itemId)
+      .input('fileId', sql.UniqueIdentifier, fileId)
+      .input('userId', sql.UniqueIdentifier, auth.userId)
+      .query(`
+        INSERT INTO dbo.TemasProyectoItemArchivos
+          (IdTemaItem, IdArchivo, IdUsuarioVinculo, FechaVinculo)
+        VALUES
+          (@itemId, @fileId, @userId, GETDATE())
+      `)
+
+    const q = await pool
+      .request()
+      .input('itemId', sql.UniqueIdentifier, itemId)
+      .input('fileId', sql.UniqueIdentifier, fileId)
+      .query<TopicItemFileRow>(`
+        SELECT TOP 1
+          v.Id,
+          v.IdTemaItem,
+          v.IdArchivo,
+          v.IdUsuarioVinculo,
+          v.FechaVinculo,
+          a.Nombre,
+          a.Extension,
+          a.Tamano               AS TamanioBytes,
+          a.TipoMime,
+          u.NombreCompleto        AS NombreUsuarioVinculo,
+          u.Correo                AS CorreoUsuarioVinculo
+        FROM      dbo.TemasProyectoItemArchivos v
+        LEFT JOIN dbo.Archivos a ON a.Id = v.IdArchivo
+        LEFT JOIN dbo.Usuarios u ON u.Id = v.IdUsuarioVinculo
+        WHERE v.IdTemaItem = @itemId AND v.IdArchivo = @fileId
+      `)
+
+    const mapped = mapTopicItemFile(q.recordset[0])
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'topic_item.archivo_vinculado',
+      resourceType: 'topic_item',
+      resourceId: itemId,
+      resourceName: itemTitle,
+      projectId,
+      extra: {
+        topicId,
+        topicTitle,
+        itemTitle,
+        fileId: mapped.fileId,
+        fileName: mapped.fileName ?? fileNameAudit,
+      },
+      req,
+    })
+    res.status(201).json({ success: true, data: mapped })
+  } catch (err) {
+    // Violación UQ = el vinculo ya existía → OK 200 + volver a retornarlo (idempotente)
+    if (
+      err instanceof Error &&
+      (err.message.includes('UQ_TemasProyectoItemArchivos_Item_Archivo') ||
+        (err as any).number === 2601 ||
+        (err as any).number === 2627)
+    ) {
+      try {
+        const itemId = String(req.params.itemId || '')
+        const fileId = String(req.params.fileId || '')
+        const pool = await getDbPool()
+        const q = await pool
+          .request()
+          .input('itemId', sql.UniqueIdentifier, itemId)
+          .input('fileId', sql.UniqueIdentifier, fileId)
+          .query<TopicItemFileRow>(`
+            SELECT TOP 1
+              v.Id,
+              v.IdTemaItem,
+              v.IdArchivo,
+              v.IdUsuarioVinculo,
+              v.FechaVinculo,
+              a.Nombre,
+              a.Extension,
+              a.Tamano               AS TamanioBytes,
+              a.TipoMime,
+              u.NombreCompleto        AS NombreUsuarioVinculo,
+              u.Correo                AS CorreoUsuarioVinculo
+            FROM      dbo.TemasProyectoItemArchivos v
+            LEFT JOIN dbo.Archivos a ON a.Id = v.IdArchivo
+            LEFT JOIN dbo.Usuarios u ON u.Id = v.IdUsuarioVinculo
+            WHERE v.IdTemaItem = @itemId AND v.IdArchivo = @fileId
+          `)
+        if (q.recordset[0]) {
+          const mapped = mapTopicItemFile(q.recordset[0])
+          res.status(200).json({ success: true, data: mapped, duplicated: true })
+          return
+        }
+      } catch (_inner) {
+        // fall-through al next original
+      }
+    }
+    next(err)
+  }
+}
+
+export async function unlinkFileFromTopicItem(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const auth = (req as unknown as { auth: { organizationId: string; userId: string } }).auth
+    const projectId = String(req.params.projectId || '')
+    const topicId = String(req.params.topicId || '')
+    const itemId = String(req.params.itemId || '')
+    const fileId = String(req.params.fileId || '')
+    const itemRow = await getTopicItemRowOrThrow(projectId, topicId, itemId, auth.organizationId)
+    const itemTitle = String(itemRow.Titulo || itemId)
+
+    const pool = await getDbPool()
+
+    const topicMeta = await pool
+      .request()
+      .input('topicId', sql.UniqueIdentifier, topicId)
+      .query<{ Titulo: string | null }>(`SELECT Titulo FROM dbo.TemasProyecto WHERE Id = @topicId`)
+    const topicTitle = String(topicMeta.recordset[0]?.Titulo || topicId)
+
+    const fileMeta = await pool
+      .request()
+      .input('fileId', sql.UniqueIdentifier, fileId)
+      .input('projectId', sql.UniqueIdentifier, projectId)
+      .query<{ IdProyecto: string | null; Nombre: string | null; Extension: string | null }>(`
+        SELECT IdProyecto, Nombre, Extension FROM dbo.Archivos WHERE Id = @fileId
+      `)
+    const fileNameAudit =
+      composeFileName(
+        fileMeta.recordset.length > 0 ? fileMeta.recordset[0].Nombre : null,
+        fileMeta.recordset.length > 0 ? fileMeta.recordset[0].Extension : null,
+      ) || fileId
+
+    const del = pool.request()
+    del.input('itemId', sql.UniqueIdentifier, itemId)
+    del.input('fileId', sql.UniqueIdentifier, fileId)
+    const r = await del.query(`
+      DELETE FROM dbo.TemasProyectoItemArchivos
+       WHERE IdTemaItem = @itemId AND IdArchivo = @fileId
+    `)
+    if (Number(r.rowsAffected[0] || 0) === 0) {
+      throw new NotFoundError('Vínculo con el archivo no encontrado')
+    }
+
+    await logAuditRecord({
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: 'topic_item.archivo_desvinculado',
+      resourceType: 'topic_item',
+      resourceId: itemId,
+      resourceName: itemTitle,
+      projectId,
+      extra: {
+        topicId,
+        topicTitle,
+        itemTitle,
+        fileId,
+        fileName: fileNameAudit,
+      },
       req,
     })
     res.status(204).send()

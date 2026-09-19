@@ -78,6 +78,61 @@ export interface ApiAvailableTopicItemMember {
   assignmentId?: string | null
 }
 
+export interface ApiTopicItemFile {
+  id: string
+  topicItemId: string
+  fileId: string
+  fileName?: string | null
+  fileSizeBytes?: number | null
+  fileMimeType?: string | null
+  linkedByUserId?: string | null
+  linkedByUserName?: string | null
+  linkedAt: string
+}
+
+export async function fetchTopicItemFiles(
+  projectId: string,
+  topicId: string,
+  itemId: string
+) {
+  const res = await api.get<ApiResponse<ApiTopicItemFile[]>>(
+    `/projects/${projectId}/temas/${topicId}/items/${itemId}/archivos`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudieron cargar los archivos vinculados')
+  }
+  return res.data.data
+}
+
+export async function linkFileToTopicItem(
+  projectId: string,
+  topicId: string,
+  itemId: string,
+  fileId: string
+) {
+  const res = await api.post<ApiResponse<ApiTopicItemFile>>(
+    `/projects/${projectId}/temas/${topicId}/items/${itemId}/archivos/${fileId}`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'No se pudo vincular el archivo')
+  }
+  return res.data.data
+}
+
+export async function unlinkFileFromTopicItem(
+  projectId: string,
+  topicId: string,
+  itemId: string,
+  fileId: string
+) {
+  const res = await api.delete(
+    `/projects/${projectId}/temas/${topicId}/items/${itemId}/archivos/${fileId}`
+  )
+  if (res.status !== 204) {
+    throw new Error('No se pudo desvincular el archivo')
+  }
+}
+
 export async function fetchTopics(params: {
   projectId: string
   page?: number

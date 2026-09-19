@@ -490,7 +490,10 @@ export async function deleteFileById(
   await storage.deleteObject(key).catch(() => {})
   const d = pool.request()
   d.input('id', sql.UniqueIdentifier, id)
-  await d.query('DELETE FROM Archivos WHERE Id=@id')
+  await d.query(`
+    DELETE FROM dbo.TemasProyectoItemArchivos WHERE IdArchivo = @id;
+    DELETE FROM Archivos WHERE Id=@id
+  `)
 }
 
 export async function updateFileById(

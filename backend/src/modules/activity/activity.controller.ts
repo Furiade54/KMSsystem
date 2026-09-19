@@ -15,6 +15,7 @@ type ActivityItem = {
   userFullName: string | null
   userEmail: string | null
   occurredAt: string
+  extra?: Record<string, unknown> | null
 }
 
 async function ensureProjectAccess(
@@ -305,6 +306,7 @@ function tryFromAuditoria(
           occurredAt: sqlLocalToIso(row.FechaCreacion as any),
           comment: (meta.comment as any) ?? null,
           commentId: (meta.commentId as any) ?? null,
+          extra: meta && typeof meta === 'object' ? (meta as any) : null,
         } as any
       })
     return { ok: true as const, items, total: totalAudit }
@@ -355,6 +357,7 @@ export async function listActivity(
         resourceName: composeResourceName(action, base, m as any),
         comment: (m.comment as any) ?? null,
         commentId: (m.commentId as any) ?? null,
+        extra: m && typeof m === 'object' ? (m as any) : null,
       } as any
     })
     const total = fb.total
