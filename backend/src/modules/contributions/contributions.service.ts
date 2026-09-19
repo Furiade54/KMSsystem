@@ -180,11 +180,17 @@ export async function listProjectContributions(
   const ids = rows.recordset.map((r: AporteRow) => String(r.Id))
   const linkedByContrib: Record<string, Array<{ id: string; title: string; linkedAt: string; linkedBy: string | null }>> = {}
   if (ids.length) {
-    const tvIds = ids.map(i => `'${i.replace(/'/g, '')}'`).join(',')
-    const atv = await pool.request().query(`
+    const atvReq = pool.request()
+    const params: string[] = []
+    ids.forEach((i, idx) => {
+      const p = `id${idx}`
+      params.push(`@${p}`)
+      atvReq.input(p, sql.UniqueIdentifier, i)
+    })
+    const atv = await atvReq.query(`
       SELECT atv.IdAporte, atv.IdTema, atv.FechaVinculacion, atv.IdUsuarioVinculante, t.Titulo
       FROM AportesTemasVinculados atv LEFT JOIN TemasProyecto t ON t.Id = atv.IdTema
-      WHERE atv.IdAporte IN (${tvIds})
+      WHERE atv.IdAporte IN (${params.join(',')})
     `)
     for (const v of atv.recordset) {
       const key = String(v.IdAporte)
@@ -269,6 +275,8 @@ export async function createContribution(
   const type = (body.type ?? 'IDEA').toUpperCase()
   if (!VALID_TIPOS.has(type)) throw new AppError('Tipo de aporte inválido', 400)
   if (type === 'ENLACE' && !body.externalUrl) throw new AppError('Tipo ENLACE requiere externalUrl', 400)
+  if (type === 'ARCHIVO' && !body.attachedFileId) throw new AppError('Tipo ARCHIVO requiere attachedFileId', 400)
+  if (type === 'IMAGEN' && !body.attachedFileId) throw new AppError('Tipo IMAGEN requiere attachedFileId', 400)
   const status = (body.status ?? 'PUBLICADO').toUpperCase()
   if (!VALID_ESTADOS.has(status)) throw new AppError('Estado inválido', 400)
   const importancia = (body.priority ?? 'NORMAL').toUpperCase()
@@ -411,12 +419,20 @@ export async function updateContribution(
     const ty = String(b.type ?? 'IDEA').toUpperCase()
     if (!VALID_TIPOS.has(ty)) throw new AppError('Tipo de aporte inválido', 400)
     if (ty === 'ENLACE' && !(b.externalUrl ?? current.UrlExterno)) throw new AppError('Tipo ENLACE requiere externalUrl', 400)
+    if (ty === 'ARCHIVO' && !(b.attachedFileId ?? current.IdArchivoAdjunto)) throw new AppError('Tipo ARCHIVO requiere attachedFileId', 400)
+    if (ty === 'IMAGEN' && !(b.attachedFileId ?? current.IdArchivoAdjunto)) throw new AppError('Tipo IMAGEN requiere attachedFileId', 400)
     up.input('ty', sql.VarChar(30), ty); sets.push('Tipo=@ty')
   }
   if (b.externalUrl !== undefined) {
     const ty = (b.type ?? current.Tipo).toUpperCase()
     if (ty === 'ENLACE' && !b.externalUrl) throw new AppError('Tipo ENLACE requiere externalUrl', 400)
     up.input('u', sql.NVarChar(500), b.externalUrl ?? null); sets.push('UrlExterno=@u')
+  }
+  if (b.attachedFileId !== undefined) {
+    const ty = (b.type ?? current.Tipo).toUpperCase()
+    if ((ty === 'ARCHIVO' || ty === 'IMAGEN') && !b.attachedFileId) {
+      throw new AppError(`Tipo ${ty} requiere attachedFileId, no se puede desvincular sin cambiar antes el tipo`, 400)
+    }
   }
   if (b.folderId !== undefined) {
     if (b.folderId) {
@@ -452,7 +468,21 @@ export async function updateContribution(
     sets.push("Estado=CASE WHEN Estado='BORRADOR' THEN 'PUBLICADO' ELSE Estado END")
   }
 
-  if (sets.length <= 1) return getContribution(auth, { projectId: input.projectId, contributionId: input.contributionId })
+  if (sets.length <= 1) {
+    const perms = permFor(auth, current, projectOwnerId)
+    const atv = await pool.request().input('cid', sql.UniqueIdentifier, input.contributionId).query(`
+      SELECT atv.IdAporte, atv.IdTema, atv.FechaVinculacion, atv.IdUsuarioVinculante, t.Titulo
+      FROM AportesTemasVinculados atv LEFT JOIN TemasProyecto t ON t.Id = atv.IdTema
+      WHERE atv.IdAporte=@cid
+    `)
+    const linkedTopics = atv.recordset.map((v: any) => ({
+      id: String(v.IdTema),
+      title: v.Titulo ? String(v.Titulo) : '',
+      linkedAt: sqlLocalToIso(v.FechaVinculacion as any),
+      linkedBy: v.IdUsuarioVinculante ? String(v.IdUsuarioVinculante) : null,
+    }))
+    return mapAporte(current, { linkedTopics, perms })
+  }
   const setSql = sets.join(', ')
   await up.query(`
     UPDATE AportesProyecto SET ${setSql} WHERE Id=@cid AND IdProyecto=@projectId AND IdOrganizacion=@orgId;

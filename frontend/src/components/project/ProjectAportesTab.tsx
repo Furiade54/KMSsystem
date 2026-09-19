@@ -401,10 +401,14 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
                   />
                 </div>
               )}
-              {(form.type === 'ARCHIVO' || form.type === 'IMAGEN') && (
+              {form.type !== 'ENLACE' && (
                 <div className="space-y-2">
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                    {form.type === 'IMAGEN' ? 'Imagen adjunta (requerido)' : 'Archivo adjunto (requerido)'}
+                    {form.type === 'IMAGEN'
+                      ? 'Imagen adjunta (requerido)'
+                      : form.type === 'ARCHIVO'
+                        ? 'Archivo adjunto (requerido)'
+                        : 'Archivo adjunto (opcional)'}
                   </label>
                   <div className="flex flex-col gap-2 rounded-md border border-dashed border-slate-300 dark:border-slate-600 p-3 bg-slate-50 dark:bg-slate-800/40">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -456,8 +460,9 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
                     )}
                     {!form.uploading && !form.attachedFileMeta && (
                       <p className="text-[11px] text-slate-500">
-                        Vinculá un archivo que ya exista en la pestaña Documentos del proyecto.
-                        Si el archivo todavía no está subido, ingresá a Documentos y súbelo primero.
+                        {form.type === 'ARCHIVO' || form.type === 'IMAGEN'
+                          ? 'Vinculá un archivo que ya exista en la pestaña Documentos del proyecto. Si el archivo todavía no está subido, ingresá a Documentos y súbelo primero.'
+                          : 'Opcional: podés vincular un archivo existente de la pestaña Documentos del proyecto para acompañar este aporte.'}
                       </p>
                     )}
                   </div>
