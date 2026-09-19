@@ -18,6 +18,21 @@ import {
   setAttendance,
   upsertMeetingParticipant,
 } from './participants.controller'
+import {
+  createMeetingMinutes,
+  deleteMeetingMinutes,
+  listMeetingMinutes,
+  updateMeetingMinutes,
+} from './minutes.controller'
+import {
+  createMeetingAgendaItem,
+  deleteMeetingAgendaItem,
+  getMeetingAgendaItem,
+  listMeetingAgenda,
+  moveMeetingAgendaItem,
+  reorderMeetingAgenda,
+  updateMeetingAgendaItem,
+} from './reunion-agenda.controller'
 
 const meetingsRouter = Router({ mergeParams: true })
 
@@ -37,6 +52,7 @@ meetingsRouter.patch(
   setMeetingMinutesFile
 )
 
+// --- Asistentes ---
 meetingsRouter.get(
   '/:meetingId/asistentes',
   requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
@@ -56,6 +72,65 @@ meetingsRouter.delete(
   '/:meetingId/asistentes/:userId',
   requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
   removeMeetingParticipant
+)
+
+// --- Actas inline textuales (tabla ActasReunion reactivada) ---
+meetingsRouter.get(
+  '/:meetingId/actas',
+  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
+  listMeetingMinutes
+)
+meetingsRouter.post(
+  '/:meetingId/actas',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  createMeetingMinutes
+)
+meetingsRouter.patch(
+  '/:meetingId/actas/:minutesId',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  updateMeetingMinutes
+)
+meetingsRouter.delete(
+  '/:meetingId/actas/:minutesId',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  deleteMeetingMinutes
+)
+
+// --- Orden del día (tabla ReunionesOrdenDia, nueva en Fase 1) ---
+meetingsRouter.get(
+  '/:meetingId/orden-dia',
+  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
+  listMeetingAgenda
+)
+meetingsRouter.post(
+  '/:meetingId/orden-dia',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  createMeetingAgendaItem
+)
+meetingsRouter.patch(
+  '/:meetingId/orden-dia/reorder',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  reorderMeetingAgenda
+)
+meetingsRouter.get(
+  '/:meetingId/orden-dia/:itemId',
+  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
+  getMeetingAgendaItem
+)
+meetingsRouter.patch(
+  '/:meetingId/orden-dia/:itemId',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  updateMeetingAgendaItem
+)
+meetingsRouter.delete(
+  '/:meetingId/orden-dia/:itemId',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  deleteMeetingAgendaItem
+)
+meetingsRouter.patch(
+  '/:meetingId/orden-dia/:itemId/move',
+  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
+  moveMeetingAgendaItem
 )
 
 // --- Vinculación Reunión <-> Temas ---
