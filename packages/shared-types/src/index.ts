@@ -44,15 +44,44 @@ export interface User {
   isOrgAdmin?: boolean
 }
 
+export interface RolePermission {
+  id: string
+  code: PermissionCode
+  description?: string | null
+  category?: string | null
+  level?: PermissionLevel | null
+}
+
+export type PermissionLevel = 'ORGANIZACION' | 'PROYECTO' | 'RECURSO' | 'SISTEMA'
+
 export interface Role {
   id: string
   organizationId?: string | null
   name: string
   description?: string | null
   isSystemRole: boolean
-  priorityLevel?: number
+  priorityLevel: number
   createdAt: string
   updatedAt?: string | null
+  permissions?: RolePermission[]
+  usersCount?: number
+}
+
+export interface CreateRoleDto {
+  name: string
+  description?: string | null
+  priorityLevel?: number
+  permissionCodes?: PermissionCode[]
+}
+
+export interface UpdateRoleDto {
+  name?: string
+  description?: string | null
+  priorityLevel?: number
+}
+
+export interface SetRolePermissionsDto {
+  permissionCodes: PermissionCode[]
 }
 
 export interface UserRole {
@@ -215,12 +244,28 @@ export type PermissionCode =
   | 'roles.ver'
   | 'roles.asignar'
   | 'roles.crear'
+  | 'roles.editar'
+  | 'roles.eliminar'
   | 'solicitudes.gestionar'
   | 'proyectos.ver'
   | 'proyectos.crear'
   | 'proyectos.editar'
   | 'proyectos.eliminar'
   | 'proyectos.miembros.gestionar'
+  | 'reuniones.ver'
+  | 'reuniones.crear'
+  | 'reuniones.editar'
+  | 'reuniones.eliminar'
+  | 'reuniones.asistentes.gestionar'
+  | 'reuniones.acta.gestionar'
+  | 'temas.ver'
+  | 'temas.crear'
+  | 'temas.editar'
+  | 'temas.eliminar'
+  | 'temas.items.ver'
+  | 'temas.items.crear'
+  | 'temas.items.editar'
+  | 'temas.items.eliminar'
   | 'archivos.ver'
   | 'archivos.subir'
   | 'archivos.editar'
@@ -230,6 +275,7 @@ export type PermissionCode =
   | 'comentarios.gestionar'
   | 'favoritos.gestionar'
   | 'auditoria.ver'
+  | 'revisiones.crear'
   | 'revisiones.asignar'
   | 'revisiones.ver'
   | 'recursos.permisos.ver'
@@ -254,12 +300,28 @@ export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionC
   'roles.ver',
   'roles.asignar',
   'roles.crear',
+  'roles.editar',
+  'roles.eliminar',
   'solicitudes.gestionar',
   'proyectos.ver',
   'proyectos.crear',
   'proyectos.editar',
   'proyectos.eliminar',
   'proyectos.miembros.gestionar',
+  'reuniones.ver',
+  'reuniones.crear',
+  'reuniones.editar',
+  'reuniones.eliminar',
+  'reuniones.asistentes.gestionar',
+  'reuniones.acta.gestionar',
+  'temas.ver',
+  'temas.crear',
+  'temas.editar',
+  'temas.eliminar',
+  'temas.items.ver',
+  'temas.items.crear',
+  'temas.items.editar',
+  'temas.items.eliminar',
   'archivos.ver',
   'archivos.subir',
   'archivos.editar',
@@ -269,6 +331,7 @@ export const PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionC
   'comentarios.gestionar',
   'favoritos.gestionar',
   'auditoria.ver',
+  'revisiones.crear',
   'revisiones.asignar',
   'revisiones.ver',
   'recursos.permisos.ver',

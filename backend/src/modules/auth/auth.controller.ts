@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import * as authService from './auth.service'
 import { BadRequestError } from '../../shared/errors/AppError'
-import type { ApiResponse, LoginResponse, User } from '../../../../packages/shared-types/src'
+import type { ApiResponse, LoginResponse, PermissionCode, User } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { sqlLocalToIsoOrNull } from '../../shared/utils/date'
 
@@ -80,6 +80,16 @@ export async function meHandler(req: Request, res: Response, next: NextFunction)
       data: user,
     }
     res.status(200).json(body)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function permissionsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth) return res.status(401).json({ success: false, message: 'No autenticado' })
+    const codes = await authService.listUserPermissionCodes(req.auth.userId, req.auth.organizationId)
+    res.status(200).json({ success: true, data: codes satisfies PermissionCode[] })
   } catch (err) {
     next(err)
   }

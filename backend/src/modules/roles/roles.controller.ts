@@ -4,6 +4,7 @@ import {
   createRole,
   deleteRole,
   getRoleById,
+  listPermissionCatalog,
   listRoles,
   setRolePermissions,
   updateRole,
@@ -24,6 +25,14 @@ export async function listRolesEndpoint(req: Request, res: Response<ApiResponse<
       includePermissions: includePerms,
       includeUsersCount: includeCount,
     })
+    res.status(200).json({ success: true, data })
+  } catch (e) { next(e) }
+}
+
+export async function listPermissionCatalogEndpoint(_req: Request, res: Response<ApiResponse<any>>, next: NextFunction) {
+  try {
+    const pool = await getDbPool()
+    const data = await listPermissionCatalog(pool)
     res.status(200).json({ success: true, data })
   } catch (e) { next(e) }
 }
