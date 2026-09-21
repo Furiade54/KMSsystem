@@ -19,12 +19,6 @@ import {
   upsertMeetingParticipant,
 } from './participants.controller'
 import {
-  createMeetingMinutes,
-  deleteMeetingMinutes,
-  listMeetingMinutes,
-  updateMeetingMinutes,
-} from './minutes.controller'
-import {
   createMeetingAgendaItem,
   deleteMeetingAgendaItem,
   getMeetingAgendaItem,
@@ -72,28 +66,6 @@ meetingsRouter.delete(
   '/:meetingId/asistentes/:userId',
   requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
   removeMeetingParticipant
-)
-
-// --- Actas inline textuales (tabla ActasReunion reactivada) ---
-meetingsRouter.get(
-  '/:meetingId/actas',
-  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
-  listMeetingMinutes
-)
-meetingsRouter.post(
-  '/:meetingId/actas',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  createMeetingMinutes
-)
-meetingsRouter.patch(
-  '/:meetingId/actas/:minutesId',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  updateMeetingMinutes
-)
-meetingsRouter.delete(
-  '/:meetingId/actas/:minutesId',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  deleteMeetingMinutes
 )
 
 // --- Orden del día (tabla ReunionesOrdenDia, nueva en Fase 1) ---
