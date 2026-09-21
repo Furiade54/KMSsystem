@@ -1,7 +1,8 @@
 import { getDbPool, sql } from '../../shared/db/pool'
 import { comparePassword, signToken, getTokenExpiration } from '../../shared/auth/crypto'
 import { UnauthorizedError, ConflictError } from '../../shared/errors/AppError'
-import type { LoginResponse, User } from '../../../../packages/shared-types/src'
+import type { LoginResponse, PermissionCode, User } from '../../../../packages/shared-types/src'
+import { PERMISSION_CODES } from '../../../../packages/shared-types/src'
 import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
 import { fetchRolesForUser } from '../users/users.service'
 import { userIsOrgAdmin } from '../../shared/middleware/rbac'
@@ -239,4 +240,30 @@ export async function getUserById(id: string): Promise<User> {
     assignedBy: r.assignedBy ?? null,
   }))
   return mapUser(row, { roles: userRoles, isOrgAdmin })
+}
+
+export async function listUserPermissionCodes(userId: string, organizationId: string): Promise<PermissionCode[]> {
+  const pool = await getDbPool()
+  const r = await pool.request()
+    .input('uid', sql.UniqueIdentifier, userId)
+    .input('oid', sql.UniqueIdentifier, organizationId)
+    .query<{ Codigo: string }>(`
+      SELECT DISTINCT p.Codigo
+      FROM dbo.RolesUsuario ru
+      INNER JOIN dbo.PermisosRol pr ON pr.IdRol = ru.IdRol
+      INNER JOIN dbo.Permisos p ON p.Id = pr.IdPermiso
+      WHERE ru.IdUsuario = @uid AND ru.IdOrganizacion = @oid
+        AND p.Codigo IS NOT NULL
+      UNION
+      SELECT DISTINCT p.Codigo
+      FROM dbo.RolesUsuario ru
+      INNER JOIN dbo.Roles r ON r.Id = ru.IdRol
+      INNER JOIN dbo.PermisosRol pr ON pr.IdRol = r.Id
+      INNER JOIN dbo.Permisos p ON p.Id = pr.IdPermiso
+      WHERE ru.IdUsuario = @uid AND ru.IdOrganizacion = @oid AND r.IdOrganizacion IS NULL
+        AND p.Codigo IS NOT NULL
+    `)
+  const set = new Set<PermissionCode>()
+  for (const row of r.recordset) if (row.Codigo && PERMISSION_CODES.has(row.Codigo as PermissionCode)) set.add(row.Codigo as PermissionCode)
+  return [...set]
 }

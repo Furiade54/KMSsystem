@@ -97,7 +97,7 @@ export function mapRoleRow(row: RoleRow): Role {
     name: String(row.Nombre),
     description: row.Descripcion ?? null,
     isSystemRole: row.IdOrganizacion === null,
-    priorityLevel: row.NivelPrioridad ? Number(row.NivelPrioridad) : undefined,
+    priorityLevel: row.NivelPrioridad != null ? Number(row.NivelPrioridad) : 50,
     createdAt: sqlLocalToIso(row.FechaCreacion as any),
     updatedAt: null,
   }
@@ -124,7 +124,7 @@ function mapRoleAssignment(row: RoleAssignmentRow): RoleAssignment {
     roleName: String(row.Nombre),
     roleDescription: row.Descripcion ?? null,
     isSystemRole: row.IdOrganizacionRol === null,
-    priorityLevel: row.NivelPrioridad ? Number(row.NivelPrioridad) : undefined,
+    priorityLevel: row.NivelPrioridad != null ? Number(row.NivelPrioridad) : 50,
     assignedAt: sqlLocalToIsoOrNull(row.FechaAsignacion as any),
     assignedBy: row.AsignadoPor ? String(row.AsignadoPor) : null,
     assignedByName: row.AsignadoPorNombre ?? null,

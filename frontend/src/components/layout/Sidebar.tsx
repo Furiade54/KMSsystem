@@ -14,6 +14,7 @@ import {
   Loader2,
   LogOut,
   Landmark,
+  ShieldPlus,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -37,6 +38,7 @@ const navItems: Array<{
   { to: '/teams', label: 'Equipos', icon: Users },
   { to: '/organizations/me', label: 'Mi organización', icon: Building2 },
   { to: '/organizations', label: 'Organizaciones', icon: Landmark, adminOnly: true },
+  { to: '/roles', label: 'Roles y permisos', icon: ShieldPlus, adminOnly: true },
   { to: '/users', label: 'Usuarios', icon: Shield, adminOnly: true },
   { to: '/requests', label: 'Solicitudes', icon: BellRing, dynamicBadge: true },
   { to: '/trash', label: 'Papelera', icon: Trash2 },

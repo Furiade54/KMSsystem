@@ -60,6 +60,8 @@ export type ProjectMeetingsTabProps = {
 
   canEditMeetings: boolean
   canDeleteMeetings: boolean
+  canManageMeetingParticipants: boolean
+  canManageMeetingMinutes: boolean
 
   meetingsLoading: boolean
   meetingsFetchStatus: string
@@ -175,6 +177,8 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
     setMeetingsPage,
     canEditMeetings,
     canDeleteMeetings,
+    canManageMeetingParticipants,
+    canManageMeetingMinutes,
     meetingsLoading,
     meetingsFetchStatus,
     meetingsError,
@@ -457,7 +461,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                             <p className="text-[11.5px] text-muted-foreground">
                               Usa el botón para agregar asistentes de los miembros del proyecto.
                             </p>
-                            {canEditMeetings && (
+                            {canManageMeetingParticipants && (
                               <button
                                 type="button"
                                 disabled={props.upsertParticipantPending}
@@ -474,7 +478,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                             )}
                           </div>
 
-                          {canEditMeetings && showAddMeetingParticipant === m.id && (
+                          {canManageMeetingParticipants && showAddMeetingParticipant === m.id && (
                             <div className="p-3 border border-border/70 rounded-lg bg-surface-secondary/40 space-y-2">
                               <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr_auto] gap-2">
                                 <select
@@ -582,12 +586,13 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                       )}
                                     </div>
                                   </div>
-                                  <label className="inline-flex items-center gap-1.5 text-[11.5px] text-foreground select-none">
+                                  <label className={clsx("inline-flex items-center gap-1.5 text-[11.5px] text-foreground select-none", !canManageMeetingParticipants && "opacity-60 pointer-events-none")}>
                                     <button
                                       type="button"
                                       onClick={() => onToggleAttendance(m.id, p.userId, !p.attended)}
-                                      className="text-muted-foreground hover:text-emerald-600"
-                                      title="Marcar asistencia"
+                                      className={clsx("text-muted-foreground", canManageMeetingParticipants && "hover:text-emerald-600", !canManageMeetingParticipants && "pointer-events-none")}
+                                      title={canManageMeetingParticipants ? "Marcar asistencia" : "Sin permiso para gestionar asistentes"}
+                                      disabled={!canManageMeetingParticipants}
                                     >
                                       {p.attended ? (
                                         <CheckSquare className="w-4 h-4 text-emerald-600" />
@@ -597,7 +602,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     </button>
                                     {p.attended ? 'Asistió' : 'Ausente'}
                                   </label>
-                                  {canEditMeetings && (
+                                  {canManageMeetingParticipants && (
                                     <button
                                       type="button"
                                       disabled={props.removeParticipantPending}
@@ -908,7 +913,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                             <p className="text-[11.5px] text-muted-foreground">
                               Vinculá un archivo existente de la pestaña Documentos como acta de la reunión.
                             </p>
-                            {canEditMeetings && (
+                            {canManageMeetingMinutes && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -986,7 +991,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     >
                                       <FileText className="w-4 h-4" />
                                     </button>
-                                    {canEditMeetings && (
+                                    {canManageMeetingMinutes && (
                                       <button
                                         type="button"
                                         onClick={() => setRemoveMeetingFileId(m.id)}

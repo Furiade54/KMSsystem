@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import type { PermissionCode } from '../../../packages/shared-types/src'
 import {
   FileText,
   MessageSquare,
@@ -160,6 +161,7 @@ import {
   updateTopic as apiUpdateTopic,
   updateTopicItem as apiUpdateTopicItem,
 } from '../services/project-topics.service'
+import { hasPermission, listUserPermissions } from '../services/auth.service'
 import {
   fetchMeetingParticipants,
   upsertMeetingParticipant,
@@ -192,10 +194,22 @@ function ProjectDetailPage() {
   const navigate = useNavigate()
   const [sp] = useSearchParams()
   const queryClient = useQueryClient()
-  const { user: authUser } = useAuthStore()
+  const { user: authUser, isAuthenticated } = useAuthStore()
   const { setSelectedResource, selectedResource, rightPanelOpen, toggleRightPanel } = useUIStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const renameFileInputRef = useRef<HTMLInputElement>(null)
+
+  const userPermsQuery = useQuery<PermissionCode[]>({
+    queryKey: ['auth', 'permissions', authUser?.id ?? 'guest'],
+    queryFn: listUserPermissions,
+    enabled: !!authUser?.id && isAuthenticated,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  })
+  const userPermissionSet = useMemo<Set<PermissionCode>>(
+    () => new Set(userPermsQuery.data ?? []),
+    [userPermsQuery.data]
+  )
 
   const [activeTab, setActiveTab] = useState('docs')
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
@@ -740,44 +754,86 @@ function ProjectDetailPage() {
   const canEditMeetings = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('reuniones.editar', userPermissionSet) || hasPermission('reuniones.crear', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canDeleteMeetings = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('reuniones.eliminar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canManageMeetingParticipants = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('reuniones.asistentes.gestionar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canManageMeetingMinutes = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('reuniones.acta.gestionar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canEditTopics = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('temas.editar', userPermissionSet) || hasPermission('temas.crear', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canDeleteTopics = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('temas.eliminar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canAddTopicItems = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission(['temas.items.crear', 'temas.items.editar'], userPermissionSet, { mode: 'any' })
+  }, [project, authUser, userPermissionSet])
+
+  const canEditTopicItems = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('temas.items.editar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canDeleteTopicItems = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('temas.items.eliminar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canCreateAportes = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('aportes.crear', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canEditAportes = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('aportes.editar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canDeleteAportes = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('aportes.eliminar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const designateMasterMutation = useMutation({
     mutationFn: (payload: DesignateMasterDocPayload) => designateProjectMaster(projectId, payload),
@@ -2294,6 +2350,8 @@ function ProjectDetailPage() {
           setMeetingsPage={setMeetingsPage}
           canEditMeetings={canEditMeetings}
           canDeleteMeetings={canDeleteMeetings}
+          canManageMeetingParticipants={canManageMeetingParticipants}
+          canManageMeetingMinutes={canManageMeetingMinutes}
           meetingsLoading={meetingsQuery.isLoading}
           meetingsFetchStatus={meetingsQuery.fetchStatus}
           meetingsError={meetingsQuery.isError}
@@ -2456,11 +2514,11 @@ function ProjectDetailPage() {
           itemFilesError={itemFilesError}
           canEditTopics={canEditTopics}
           canDeleteTopics={canDeleteTopics}
-          canAddTopicItems={canEditTopics}
-          canEditTopicItems={canEditTopics}
-          canDeleteTopicItems={canDeleteTopics}
-          canAssignItemMembers={canEditTopics}
-          canLinkItemFiles={canEditTopics}
+          canAddTopicItems={canAddTopicItems}
+          canEditTopicItems={canEditTopicItems}
+          canDeleteTopicItems={canDeleteTopicItems}
+          canAssignItemMembers={canEditTopicItems}
+          canLinkItemFiles={canEditTopicItems}
           formatRelativeTime={formatRelativeTime}
         />
       )}

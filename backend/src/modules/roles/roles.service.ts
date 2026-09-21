@@ -9,6 +9,7 @@ export interface RolePermission {
   code: PermissionCode
   description?: string | null
   category?: string | null
+  level?: 'ORGANIZACION' | 'PROYECTO' | 'RECURSO' | 'SISTEMA' | null
 }
 
 export interface Role {
@@ -45,6 +46,7 @@ function mapPerm(row: any): RolePermission {
     code: row.Codigo as PermissionCode,
     description: row.Descripcion ?? null,
     category: row.Categoria ?? null,
+    level: (row.Nivel ?? null) as RolePermission['level'],
   }
 }
 
@@ -69,7 +71,7 @@ export async function listRoles(
 
   if (opts.includePermissions) {
     const q2 = `
-      SELECT r.Id AS RoleId, p.Id, p.Codigo, p.Descripcion, p.Categoria
+      SELECT r.Id AS RoleId, p.Id, p.Codigo, p.Descripcion, p.Categoria, p.Nivel
       FROM dbo.Roles r
       INNER JOIN dbo.PermisosRol pr ON pr.IdRol = r.Id
       INNER JOIN dbo.Permisos p ON p.Id = pr.IdPermiso
@@ -115,7 +117,7 @@ export async function getRoleById(
   let perms: RolePermission[] | undefined
   if (opts.includePermissions) {
     const q2 = `
-      SELECT p.Id, p.Codigo, p.Descripcion, p.Categoria
+      SELECT p.Id, p.Codigo, p.Descripcion, p.Categoria, p.Nivel
       FROM dbo.PermisosRol pr
       INNER JOIN dbo.Permisos p ON p.Id = pr.IdPermiso
       WHERE pr.IdRol = @roleId
@@ -217,43 +219,66 @@ export async function setRolePermissions(
       throw new BadRequestError('Permiso desconocido: ' + c)
     }
   }
-  const tbl = new sql.Table()
-  tbl.create = false
-  tbl.columns.add('Codigo', sql.VarChar(64))
-  for (const c of opts.codes) tbl.rows.add(c)
-  const ps = pool.request()
-  ps.input('roleId', sql.UniqueIdentifier, opts.roleId)
-  ps.input('orgId', sql.UniqueIdentifier, opts.organizationId)
-  if (tbl.rows.length > 0) ps.input('Codes', tbl)
-
-  // Bloque: DELETE todo + INSERT los nuevos (upsert granular)
+  const codesSet = new Set(opts.codes)
+  const uniqueCodes = Array.from(codesSet)
   const tx = pool.transaction()
-  await tx.begin()
+  let rollbackErr: unknown = null
   try {
-    await tx
-      .request()
-      .input('roleId', sql.UniqueIdentifier, opts.roleId)
-      .query(`DELETE FROM dbo.PermisosRol WHERE IdRol = @roleId`)
-    if (opts.codes.length > 0) {
-      const insert = `
-        INSERT INTO dbo.PermisosRol (IdRol, IdPermiso)
-        SELECT @roleId, p.Id
-        FROM dbo.Permisos p
-        INNER JOIN @Codes c ON c.Codigo = p.Codigo
-        WHERE NOT EXISTS (
-          SELECT 1 FROM dbo.PermisosRol pr WHERE pr.IdRol = @roleId AND pr.IdPermiso = p.Id
-        )`
-      const request = tx.request()
-      request.input('roleId', sql.UniqueIdentifier, opts.roleId)
-      request.input('Codes', tbl)
-      await request.batch(insert)
+    await tx.begin()
+    try {
+      await tx
+        .request()
+        .input('roleId', sql.UniqueIdentifier, opts.roleId)
+        .query(`DELETE FROM dbo.PermisosRol WHERE IdRol = @roleId`)
+      if (uniqueCodes.length > 0) {
+        const placeholders = uniqueCodes.map((_, i) => `SELECT @p${i} AS Codigo`).join(' UNION ALL ')
+        const insert = `
+          INSERT INTO dbo.PermisosRol (IdRol, IdPermiso)
+          SELECT @roleId, p.Id
+          FROM dbo.Permisos p
+          INNER JOIN (${placeholders}) c ON c.Codigo = p.Codigo`
+        const req = tx.request()
+        req.input('roleId', sql.UniqueIdentifier, opts.roleId)
+        uniqueCodes.forEach((c, i) => req.input(`p${i}`, sql.VarChar(64), c))
+        await req.query(insert)
+      }
+      await tx.commit()
+    } catch (stepErr) {
+      try { await tx.rollback() } catch (rb) { rollbackErr = rb }
+      throw stepErr
     }
-    await tx.commit()
-  } catch (e) {
-    await tx.rollback()
-    throw e
+  } catch (outer) {
+    if (rollbackErr) {
+      // eslint-disable-next-line no-console
+      console.error('[setRolePermissions] rollback failed:', rollbackErr)
+    }
+    throw outer
   }
   return getRoleById(pool, { organizationId: opts.organizationId, roleId: opts.roleId, includePermissions: true })
+}
+
+export async function listPermissionCatalog(pool: ConnectionPool): Promise<RolePermission[]> {
+  const { recordset } = await pool.query(
+    `SELECT p.Id, p.Codigo, p.Descripcion, p.Categoria, p.Nivel AS LevelN
+     FROM dbo.Permisos p
+     WHERE p.Codigo IS NOT NULL
+     ORDER BY CASE p.Nivel
+                WHEN 'ORGANIZACION' THEN 1
+                WHEN 'PROYECTO' THEN 2
+                WHEN 'RECURSO' THEN 3
+                WHEN 'SISTEMA' THEN 4
+                ELSE 5
+              END,
+              ISNULL(p.Categoria, N''),
+              p.Codigo ASC`
+  )
+  return (recordset as IRecordSet<any>).map((row) => ({
+    id: String(row.Id),
+    code: row.Codigo as RolePermission['code'],
+    description: row.Descripcion ?? null,
+    category: row.Categoria ?? null,
+    level: row.LevelN as RolePermission['level'] | undefined,
+  }))
 }
 
 export async function deleteRole(pool: ConnectionPool, opts: { organizationId: string; roleId: string }): Promise<void> {
@@ -270,6 +295,7 @@ export async function deleteRole(pool: ConnectionPool, opts: { organizationId: s
   await tx.begin()
   try {
     await tx.request().input('roleId', sql.UniqueIdentifier, opts.roleId).query(`DELETE FROM dbo.PermisosRol WHERE IdRol = @roleId`)
+    await tx.request().input('roleId', sql.UniqueIdentifier, opts.roleId).query(`DELETE FROM dbo.PermisosRecurso WHERE IdRol = @roleId`)
     await tx.request().input('roleId', sql.UniqueIdentifier, opts.roleId).query(`DELETE FROM dbo.Roles WHERE Id = @roleId`)
     await tx.commit()
   } catch (e) {
