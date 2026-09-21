@@ -167,6 +167,15 @@ import {
   removeMeetingParticipant,
   setMeetingMinutesFile as apiSetMeetingMinutesFile,
 } from '../services/meeting-details.service'
+import {
+  createMeetingAgendaItem as apiCreateMeetingAgendaItem,
+  deleteMeetingAgendaItem as apiDeleteMeetingAgendaItem,
+  listMeetingAgenda as apiListMeetingAgenda,
+  updateMeetingAgendaItem as apiUpdateMeetingAgendaItem,
+  type UpdateAgendaItemBody,
+  type CreateAgendaItemBody,
+  type DeleteAgendaBody,
+} from '../services/meeting-agenda.service'
 
 const tabs = [
   { id: 'docs', label: 'Documentos', icon: FileText },
@@ -253,7 +262,7 @@ function ProjectDetailPage() {
   const [confirmDeleteMeeting, setConfirmDeleteMeeting] = useState<ApiMeeting | null>(null)
   const [expandedMeetingId, setExpandedMeetingId] = useState<string | null>(null)
   const [linkingTopicsForMeetingId, setLinkingTopicsForMeetingId] = useState<string | null>(null)
-  const [meetingPanelTab, setMeetingPanelTab] = useState<'participants' | 'file'>('participants')
+  const [meetingPanelTab, setMeetingPanelTab] = useState<'participants' | 'agenda' | 'topics' | 'minutes'>('participants')
   const [showAddMeetingParticipant, setShowAddMeetingParticipant] = useState<string | null>(null)
   const [newParticipantUserId, setNewParticipantUserId] = useState('')
   const [newParticipantRole, setNewParticipantRole] = useState('')
@@ -494,6 +503,19 @@ function ProjectDetailPage() {
     retry: 1,
   })
 
+  const meetingAgendaQuery = useQuery({
+    queryKey: ['project', 'meeting', 'agenda', projectId, expandedMeetingId],
+    queryFn: () =>
+      apiListMeetingAgenda(projectId, expandedMeetingId as string, {
+        parentId: null,
+        flatten: true,
+        pageSize: 500,
+      }),
+    enabled: Boolean(projectId) && Boolean(expandedMeetingId) && meetingPanelTab === 'agenda',
+    staleTime: 20_000,
+    retry: 1,
+  })
+
   const meetingFilesQuery = useQuery({
     queryKey: ['project', 'meeting', 'file-picker', 'files', projectId, filePickerSearch.trim()],
     queryFn: async () => {
@@ -506,7 +528,7 @@ function ProjectDetailPage() {
       })
       return page.items
     },
-    enabled: Boolean(projectId) && (showFilePicker || Boolean(expandedMeetingId && meetingPanelTab === 'file') || Boolean(linkingTopicItemId)),
+    enabled: Boolean(projectId) && (showFilePicker || Boolean(expandedMeetingId && meetingPanelTab === 'minutes') || Boolean(linkingTopicItemId)),
     staleTime: 60_000,
   })
 
@@ -1632,6 +1654,49 @@ function ProjectDetailPage() {
     },
   })
 
+  const invalidateMeetingAgenda = (meetingId: string) => {
+    queryClient.invalidateQueries({ queryKey: ['project', 'meeting', 'agenda', projectId, meetingId], exact: false })
+  }
+
+  const createMeetingAgendaItemMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; body: CreateAgendaItemBody }) =>
+      apiCreateMeetingAgendaItem(projectId, payload.meetingId, payload.body),
+    onSuccess: (_, payload) => invalidateMeetingAgenda(payload.meetingId),
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo crear el ítem de agenda',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const updateMeetingAgendaItemMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; itemId: string; body: UpdateAgendaItemBody }) =>
+      apiUpdateMeetingAgendaItem(projectId, payload.meetingId, payload.itemId, payload.body),
+    onSuccess: (_, payload) => invalidateMeetingAgenda(payload.meetingId),
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo actualizar el ítem de agenda',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
+  const deleteMeetingAgendaItemMutation = useMutation({
+    mutationFn: (payload: { meetingId: string; itemId: string; body?: DeleteAgendaBody }) =>
+      apiDeleteMeetingAgendaItem(projectId, payload.meetingId, payload.itemId, payload.body ?? {}),
+    onSuccess: (_, payload) => invalidateMeetingAgenda(payload.meetingId),
+    onError: (err: any) => {
+      setPageToast({
+        kind: 'error',
+        title: 'No se pudo eliminar el ítem de agenda',
+        message: err?.response?.data?.message || err?.message || 'Error desconocido. Inténtalo de nuevo.',
+      })
+    },
+  })
+
   function handleAddMeetingParticipant(meetingId: string) {
     const uid = newParticipantUserId.trim()
     if (!uid) {
@@ -2239,6 +2304,10 @@ function ProjectDetailPage() {
           participantsLoading={meetingParticipantsQuery.isLoading}
           participantsError={meetingParticipantsQuery.isError}
           participantsItems={meetingParticipantsQuery.data?.items}
+          agendaLoading={meetingAgendaQuery.isLoading}
+          agendaError={meetingAgendaQuery.isError}
+          agendaItems={meetingAgendaQuery.data?.items}
+          agendaTotal={meetingAgendaQuery.data?.total}
           meetingFiles={meetingFilesQuery.data}
           expandedMeetingId={expandedMeetingId}
           setExpandedMeetingId={setExpandedMeetingId}
@@ -2262,6 +2331,9 @@ function ProjectDetailPage() {
           setAttendancePending={setMeetingAttendanceMutation.isPending}
           removeParticipantPending={removeMeetingParticipantMutation.isPending}
           setMinutesFilePending={setMeetingMinutesFileMutation.isPending}
+          createAgendaItemPending={createMeetingAgendaItemMutation.isPending}
+          updateAgendaItemPending={updateMeetingAgendaItemMutation.isPending}
+          deleteAgendaItemPending={deleteMeetingAgendaItemMutation.isPending}
           deleteMeetingPending={deleteMeetingMutation.isPending}
           projectTopicsItems={topicsQuery.data?.items}
           linkingTopicsForMeetingId={linkingTopicsForMeetingId}
@@ -2281,12 +2353,22 @@ function ProjectDetailPage() {
           onRemoveParticipant={(meetingId, userId) =>
             removeMeetingParticipantMutation.mutate({ meetingId, userId })
           }
+          onCreateAgendaItem={(meetingId, body) =>
+            createMeetingAgendaItemMutation.mutate({ meetingId, body })
+          }
+          onUpdateAgendaItem={(meetingId, itemId, body) =>
+            updateMeetingAgendaItemMutation.mutate({ meetingId, itemId, body })
+          }
+          onDeleteAgendaItem={(meetingId, itemId, body) =>
+            deleteMeetingAgendaItemMutation.mutate({ meetingId, itemId, body })
+          }
           onConfirmUnlinkActa={(meetingId) => {
             setMeetingMinutesFileMutation.mutate(
               { meetingId, minutesFileId: null },
               { onSettled: () => setRemoveMeetingFileId(null) },
             )
           }}
+          onGotoLinkedFile={onGotoLinkedFile}
         />
       )}
 

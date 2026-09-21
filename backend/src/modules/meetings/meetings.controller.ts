@@ -507,7 +507,7 @@ export async function listMeetingLinkedTopics(
           t.Titulo       AS title,
           rtv.FechaVinculacion   AS linkedAt,
           rtv.IdUsuarioVinculante AS linkedByUserId,
-          u.Correo + ' (' + u.Nombre + ')' AS linkedByUserName
+          u.Correo + ' (' + ISNULL(u.NombreCompleto, '') + ')' AS linkedByUserName
         FROM dbo.ReunionesTemasVinculados rtv
         INNER JOIN dbo.TemasProyecto t
            ON t.Id = rtv.IdTema

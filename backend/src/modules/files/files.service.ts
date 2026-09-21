@@ -491,7 +491,12 @@ export async function deleteFileById(
   const d = pool.request()
   d.input('id', sql.UniqueIdentifier, id)
   await d.query(`
+    UPDATE dbo.AportesProyecto SET IdArchivoAdjunto = NULL WHERE IdArchivoAdjunto = @id;
+    UPDATE dbo.Reuniones SET IdActaArchivo = NULL WHERE IdActaArchivo = @id;
+    UPDATE dbo.Archivos SET IdVersionActual = NULL WHERE Id = @id;
     DELETE FROM dbo.TemasProyectoItemArchivos WHERE IdArchivo = @id;
+    DELETE FROM dbo.ComentariosArchivos WHERE IdArchivo = @id;
+    DELETE FROM dbo.VersionesArchivo WHERE IdArchivo = @id;
     DELETE FROM Archivos WHERE Id=@id
   `)
 }

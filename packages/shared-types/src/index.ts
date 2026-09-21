@@ -454,9 +454,34 @@ export interface MeetingMinutes {
   meetingId: string
   createdBy?: string | null
   content?: string | null
+  title?: string | null
+  state: 'BORRADOR' | 'FINALIZADO' | 'OBSOLETO'
+  finalizedAt?: string | null
   createdAt: string
   updatedAt?: string | null
 }
+
+export type MeetingAgendaItemState =
+  | 'PENDIENTE'
+  | 'EN_CURSO'
+  | 'COMPLETADO'
+  | 'OMITIDO'
+  | 'DIFERIDO'
+
+export interface MeetingAgendaItem {
+  id: string
+  meetingId: string
+  parentId: string | null
+  order: number
+  title: string
+  description: string | null
+  estimatedMinutes: number | null
+  state: MeetingAgendaItemState
+  responsibleUserId: string | null
+  createdAt: string
+  updatedAt: string | null
+}
+
 
 // --- Recursos ---
 
