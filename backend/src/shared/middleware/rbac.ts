@@ -14,9 +14,10 @@ export type AuthWithRoles = AuthContext &
   Required<Pick<AuthContext, 'roles' | 'isOrgAdmin' | 'permissions'>>
 
 export function userIsOrgAdmin(roles: RoleAssignment[]): boolean {
-  return roles.some(
-    (r) => typeof r.priorityLevel === 'number' && r.priorityLevel <= ORG_ADMIN_MAX_PRIORITY
-  )
+  return roles.some((r) => {
+    if (typeof r.isOrgAdmin === 'boolean') return r.isOrgAdmin
+    return typeof r.priorityLevel === 'number' && r.priorityLevel <= ORG_ADMIN_MAX_PRIORITY
+  })
 }
 
 async function fetchPermissionsForRoles(

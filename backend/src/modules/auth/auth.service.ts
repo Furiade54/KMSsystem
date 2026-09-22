@@ -7,6 +7,37 @@ import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
 import { fetchRolesForUser } from '../users/users.service'
 import { userIsOrgAdmin } from '../../shared/middleware/rbac'
 
+export const SYSTEM_ROLE_MEMBER_PERMISSIONS: readonly string[] = [
+  'org.ver',
+  'proyectos.ver',
+  'proyectos.crear',
+  'reuniones.ver',
+  'reuniones.crear',
+  'temas.ver',
+  'temas.crear',
+  'temas.items.ver',
+  'temas.items.crear',
+  'revisiones.ver',
+  'revisiones.crear',
+  'archivos.ver',
+  'archivos.subir',
+  'archivos.editar',
+  'archivos.eliminar',
+  'archivos.compartir',
+  'aportes.ver',
+  'aportes.crear',
+  'aportes.editar',
+  'aportes.compartir',
+  'comentarios.crear',
+  'comentarios.gestionar',
+  'favoritos.gestionar',
+  'recursos.permisos.ver',
+  'auditoria.ver',
+] as const
+
+export const SYSTEM_ROLE_MEMBER_NAME = 'Miembro'
+export const SYSTEM_ROLE_ADMIN_NAME = 'Administrador'
+
 interface RegisterInput {
   fullName: string
   email: string
@@ -186,11 +217,7 @@ export async function register(input: RegisterInput): Promise<LoginResponse> {
       SELECT @rolAdminId, p.Id FROM Permisos p
       UNION ALL
       SELECT @rolMiembroId, p.Id FROM Permisos p
-      WHERE p.Codigo IN (
-        'org.ver','proyectos.ver','proyectos.crear','revisiones.ver',
-        'archivos.ver','archivos.subir','archivos.editar','comentarios.crear',
-        'favoritos.gestionar'
-      );
+      WHERE p.Codigo IN (${SYSTEM_ROLE_MEMBER_PERMISSIONS.map((c) => `'${c.replace(/'/g, "''")}'`).join(',')});
     `)
 
     await tx.commit()

@@ -24,6 +24,7 @@ export interface UserShape {
     name: string
     isSystemRole: boolean
     priorityLevel?: number
+    isOrgAdmin?: boolean
     assignedAt?: string | null
     assignedBy?: string | null
   }>

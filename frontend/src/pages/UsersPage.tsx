@@ -23,6 +23,11 @@ import {
   ShieldPlus,
   UserPlus,
   Filter,
+  Crown,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Copy,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -590,10 +595,20 @@ function UserEditModal({
   const [position, setPosition] = useState(user?.position ?? '')
   const [status, setStatus] = useState<EntityStatus>((user?.status as EntityStatus) ?? 'ACTIVE')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [roleIds, setRoleIds] = useState<string[]>(() => user?.roles?.map((r) => r.id) ?? [])
   const [error, setError] = useState('')
 
   const busy = creating || updating
+
+  function generateRandomPwd(): string {
+    const base = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    let out = ''
+    const arr = new Uint32Array(14)
+    crypto.getRandomValues(arr)
+    for (let i = 0; i < arr.length; i++) out += base[arr[i] % base.length]
+    return out
+  }
 
   function toggleRole(rid: string) {
     setRoleIds((cur) => (cur.includes(rid) ? cur.filter((x) => x !== rid) : [...cur, rid]))
@@ -610,9 +625,15 @@ function UserEditModal({
       setError('Correo electrónico inválido')
       return
     }
-    if (!isEdit && password && password.length < 6) {
-      setError('Contraseña debe tener al menos 6 caracteres')
-      return
+    if (!isEdit) {
+      if (!password.trim()) {
+        setError('La contraseña es obligatoria. Escribela o pulsa "Generar".')
+        return
+      }
+      if (password.length < 6) {
+        setError('Contraseña debe tener al menos 6 caracteres')
+        return
+      }
     }
     if (isEdit) {
       const dto: UpdateUserDto = {
@@ -632,8 +653,8 @@ function UserEditModal({
         phone: phone.trim() || null,
         position: position.trim() || null,
         status,
+        password: password.trim(),
       }
-      if (password.trim()) dto.password = password.trim()
       if (roleIds.length > 0) dto.roleIds = roleIds
       onCreate(dto)
     }
@@ -683,10 +704,63 @@ function UserEditModal({
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                {isEdit ? 'Nueva contraseña (opcional)' : 'Contraseña (opcional)'}
-              </label>
-              <input className="input-base mt-1 text-sm" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Auto-generada si está vacía'} disabled={busy} />
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">
+                  {isEdit ? 'Nueva contraseña (opcional)' : 'Contraseña inicial'}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = generateRandomPwd()
+                    setPassword(p)
+                    setShowPassword(true)
+                    setError('')
+                  }}
+                  disabled={busy}
+                  className="text-[11px] inline-flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-surface-secondary text-muted-foreground hover:text-foreground border border-transparent hover:border-border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Generar
+                </button>
+              </div>
+              <div className="relative mt-1">
+                <input
+                  className="input-base pr-20 text-sm"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError('') }}
+                  placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'}
+                  disabled={busy}
+                  autoComplete="new-password"
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 pr-1">
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText?.(password).catch(() => {})}
+                    disabled={busy || !password.trim()}
+                    className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:opacity-40 focus:outline-none"
+                    title="Copiar contraseña"
+                    tabIndex={-1}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    disabled={busy}
+                    className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:opacity-40 focus:outline-none"
+                    title={showPassword ? 'Ocultar' : 'Mostrar'}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+              {!isEdit && (
+                <p className="mt-1 text-[10.5px] text-muted-foreground leading-snug">
+                  Debes proporcionársela al usuario. Cada persona luego puede cambiar su propia contraseña desde el menú del perfil.
+                </p>
+              )}
             </div>
           </div>
 
@@ -790,9 +864,10 @@ function RoleManagerModal({
                     <div className="font-medium text-foreground inline-flex items-center gap-1.5">
                       {r.name}
                       {r.isSystemRole && <ShieldCheck className="w-3 h-3 text-status-blocked" />}
-                      {typeof r.priorityLevel === 'number' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-secondary text-muted-foreground">
-                          Nivel {r.priorityLevel}
+                      {r.isOrgAdmin && (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/30">
+                          <Crown className="w-2.5 h-2.5" />
+                          Admin org
                         </span>
                       )}
                     </div>

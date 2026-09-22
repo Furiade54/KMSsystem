@@ -55,6 +55,7 @@ export async function createRoleEndpoint(req: Request, res: Response<ApiResponse
       organizationId: auth.organizationId,
       name: String(body.name ?? ''),
       description: body.description ?? null,
+      isOrgAdmin: body.isOrgAdmin !== undefined ? Boolean(body.isOrgAdmin) : undefined,
       priorityLevel: body.priorityLevel !== undefined ? Number(body.priorityLevel) : undefined,
       permissionCodes: Array.isArray(body.permissionCodes) ? (body.permissionCodes as PermissionCode[]) : undefined,
     })
@@ -72,6 +73,7 @@ export async function updateRoleEndpoint(req: Request, res: Response<ApiResponse
       roleId: String(req.params.id),
       name: body.name,
       description: body.description !== undefined ? body.description ?? null : undefined,
+      isOrgAdmin: body.isOrgAdmin !== undefined ? Boolean(body.isOrgAdmin) : undefined,
       priorityLevel: body.priorityLevel !== undefined ? Number(body.priorityLevel) : undefined,
     })
     res.status(200).json({ success: true, data })

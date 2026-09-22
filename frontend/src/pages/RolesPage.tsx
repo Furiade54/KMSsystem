@@ -14,6 +14,7 @@ import {
   Save,
   ChevronRight,
   ChevronDown,
+  Crown,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -107,7 +108,7 @@ function RolesPage() {
     const all = listQuery.data ?? []
     if (!q) return all
     return all.filter((r) =>
-      [r.name, r.description ?? '', String(r.priorityLevel)].some((s) => s.toLowerCase().includes(q))
+      [r.name, r.description ?? '', r.isOrgAdmin ? 'admin organizacion' : ''].some((s) => s.toLowerCase().includes(q))
     )
   }, [listQuery.data, searchInput])
 
@@ -189,7 +190,7 @@ function RolesPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Buscar rol por nombre, descripción o nivel..."
+            placeholder="Buscar rol por nombre, descripción o admin..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="input-base pl-10 py-1.5 text-sm"
@@ -228,7 +229,7 @@ function RolesPage() {
                 <tr className="bg-surface-secondary/60 text-[11.5px] text-muted-foreground uppercase tracking-wide">
                   <th className="text-left px-4 py-2.5 font-medium w-[28%]">Rol</th>
                   <th className="text-left px-4 py-2.5 font-medium w-[32%]">Descripción</th>
-                  <th className="text-center px-4 py-2.5 font-medium w-[10%]">Nivel</th>
+                  <th className="text-center px-4 py-2.5 font-medium w-[10%]">Tipo</th>
                   <th className="text-center px-4 py-2.5 font-medium w-[12%]">Permisos</th>
                   <th className="text-center px-4 py-2.5 font-medium w-[10%]">
                     <Users className="w-3.5 h-3.5 mx-auto" />
@@ -258,11 +259,13 @@ function RolesPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium text-foreground truncate">{r.name}</p>
                               <RoleBadge name={r.isSystemRole ? 'Sistema' : 'Personalizado'} isSystemRole={r.isSystemRole} />
+                              {r.isOrgAdmin && (
+                                <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-amber-400/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/30">
+                                  <Crown className="w-3 h-3" />
+                                  Admin org
+                                </span>
+                              )}
                             </div>
-                            <p className="text-[11.5px] text-muted-foreground mt-0.5">
-                              Prioridad {r.priorityLevel.toString().padStart(3, '0')}
-                              {r.isSystemRole && r.priorityLevel <= 25 ? ' · Admin org' : ''}
-                            </p>
                           </div>
                         </div>
                       </td>
@@ -272,8 +275,22 @@ function RolesPage() {
                         </p>
                       </td>
                       <td className="px-4 py-3 text-center align-top">
-                        <span className="inline-block text-[11px] font-mono rounded-full px-2 py-0.5 bg-surface-secondary text-muted-foreground">
-                          {r.priorityLevel}
+                        <span
+                          className={clsx(
+                            'inline-flex items-center gap-1 text-[11px] rounded-full px-2 py-0.5',
+                            r.isOrgAdmin
+                              ? 'bg-amber-400/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-400/30'
+                              : 'bg-surface-secondary text-muted-foreground'
+                          )}
+                        >
+                          {r.isOrgAdmin ? (
+                            <>
+                              <Crown className="w-3 h-3" />
+                              Admin org
+                            </>
+                          ) : (
+                            'Estándar'
+                          )}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center align-top">
@@ -391,10 +408,10 @@ function EditRoleDrawer({
   const seed = target.mode === 'edit' ? target.role : null
   const [name, setName] = useState(seed?.name ?? '')
   const [description, setDescription] = useState(seed?.description ?? '')
-  const [priorityLevel, setPriorityLevel] = useState<number>(seed?.priorityLevel ?? 100)
+  const [isOrgAdmin, setIsOrgAdmin] = useState<boolean>(seed?.isOrgAdmin ?? false)
   const [error, setError] = useState<string | null>(null)
 
-  const canEditNameOrPriority = !isEdit || !(seed?.isSystemRole) || false
+  const canEditNameOrAdmin = !isEdit || !(seed?.isSystemRole) || false
 
   return (
     <DrawerShell
@@ -412,12 +429,10 @@ function EditRoleDrawer({
             disabled={pending || !!error || !name.trim()}
             onClick={() => {
               if (!name.trim()) return setError('El nombre es requerido')
-              const num = Number(priorityLevel)
-              if (Number.isNaN(num) || num < 0 || num > 255) return setError('Nivel debe ser 0-255')
               onSave({
                 name: name.trim(),
                 description: description.trim() || null,
-                priorityLevel: num,
+                isOrgAdmin,
               })
             }}
           >
@@ -433,7 +448,7 @@ function EditRoleDrawer({
           <input
             className="input-base mt-1"
             value={name}
-            disabled={!canEditNameOrPriority || pending}
+            disabled={!canEditNameOrAdmin || pending}
             onChange={(e) => { setName(e.target.value); setError(null) }}
             placeholder="Ej: Supervisor de proyectos"
           />
@@ -450,25 +465,24 @@ function EditRoleDrawer({
           />
         </label>
 
-        <div className="grid grid-cols-3 gap-3">
-          <label className="col-span-1 block">
-            <span className="text-[11.5px] font-medium text-foreground/80">Nivel prioridad (0-255)</span>
-            <input
-              type="number"
-              min={0}
-              max={255}
-              className="input-base mt-1 tabular-nums"
-              value={priorityLevel}
-              disabled={!canEditNameOrPriority || pending}
-              onChange={(e) => { setPriorityLevel(Number(e.target.value)); setError(null) }}
-            />
-          </label>
-          <div className="col-span-2 flex items-end">
-            <p className="text-[11.5px] text-muted-foreground">
-              Los valores ≤ 25 marcan al usuario como <span className="font-semibold">Administrador de la organización</span> (isOrgAdmin). Menor valor = mayor prioridad.
+        <label className="flex items-start gap-3 p-3 rounded-lg border border-border bg-surface-secondary/30 hover:bg-surface-secondary/50 transition-colors cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-input text-brand-600 focus:ring-brand-500 shrink-0"
+            checked={isOrgAdmin}
+            disabled={!canEditNameOrAdmin || pending}
+            onChange={(e) => setIsOrgAdmin(e.target.checked)}
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-300" />
+              <span className="text-[12.5px] font-semibold text-foreground/90">Administrador de la organización</span>
+            </div>
+            <p className="text-[11.5px] text-muted-foreground mt-0.5 leading-relaxed">
+              Al marcar esta opción, el rol <span className="font-semibold">salta todos los permisos</span>: tiene acceso total a la organización y sus proyectos, sin importar qué casillas estén marcadas.
             </p>
           </div>
-        </div>
+        </label>
 
         {error && (
           <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-[11.5px] text-destructive">

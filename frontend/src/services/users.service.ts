@@ -98,3 +98,8 @@ export async function assignRolesToUser(userId: string, roleIds: string[]): Prom
   if (!res.data?.success) throw new Error(buildError(res.data, 'No se pudieron actualizar los roles'))
   return res.data.data as RoleAssignment[]
 }
+
+export async function changeMyPassword(payload: { currentPassword: string; newPassword: string }): Promise<void> {
+  const res = await api.post<ApiResponse<any>>(`/usuarios/me/change-password`, payload)
+  if (!res.data?.success) throw new Error(buildError(res.data, 'No se pudo cambiar la contraseña'))
+}

@@ -17,20 +17,30 @@ export interface Role {
   name: string
   description?: string | null
   isSystemRole: boolean
+  /** @deprecated Usar isOrgAdmin */
   priorityLevel: number
+  isOrgAdmin: boolean
   createdAt: string
   updatedAt?: string | null
   permissions?: RolePermission[]
   usersCount?: number
 }
 
+export function resolveIsOrgAdmin(row: any): boolean {
+  if (row.EsAdminOrg != null) return Boolean(row.EsAdminOrg)
+  return typeof row.NivelPrioridad === 'number' && row.NivelPrioridad <= 25
+}
+
 function mapRole(row: any, permissions?: RolePermission[], usersCount?: number): Role {
+  const priorityLevel = Number(row.NivelPrioridad ?? 50)
+  const isOrgAdmin = resolveIsOrgAdmin(row)
   return {
     id: String(row.Id),
     name: row.Nombre,
     description: row.Descripcion ?? null,
     isSystemRole: Boolean(row.EsRolSistema),
-    priorityLevel: Number(row.NivelPrioridad ?? 50),
+    priorityLevel,
+    isOrgAdmin,
     createdAt: row.FechaCreacion?.toISOString?.() ?? new Date(row.FechaCreacion).toISOString(),
     updatedAt: row.FechaActualizacion
       ? row.FechaActualizacion.toISOString?.() ?? new Date(row.FechaActualizacion).toISOString()
@@ -134,13 +144,17 @@ export async function createRole(
     organizationId: string
     name: string
     description?: string | null
+    isOrgAdmin?: boolean
     priorityLevel?: number
     permissionCodes?: PermissionCode[]
   }
 ): Promise<Role> {
   const name = (opts.name ?? '').trim()
   if (!name) throw new BadRequestError('Nombre del rol es requerido')
-  const priority = opts.priorityLevel ?? 100
+  const isOrgAdmin =
+    opts.isOrgAdmin ?? (typeof opts.priorityLevel === 'number' ? opts.priorityLevel <= 25 : false)
+  const priority =
+    opts.priorityLevel ?? (isOrgAdmin ? 10 : 100)
   if (priority < 0 || priority > 255) throw new BadRequestError('NivelPrioridad debe ser 0-255')
 
   const dup = await pool
@@ -177,19 +191,29 @@ export async function updateRole(
     roleId: string
     name?: string
     description?: string | null
+    isOrgAdmin?: boolean
     priorityLevel?: number
   }
 ): Promise<Role> {
   const role = await getRoleById(pool, { organizationId: opts.organizationId, roleId: opts.roleId })
   if (role.isSystemRole) {
-    if (opts.priorityLevel !== undefined || opts.name !== undefined) {
-      throw new BadRequestError('Roles de sistema no se pueden renombrar ni cambiar prioridad')
+    if (opts.priorityLevel !== undefined || opts.isOrgAdmin !== undefined || opts.name !== undefined) {
+      throw new BadRequestError('Roles de sistema no se pueden renombrar ni cambiar el estado de Admin')
     }
   }
   const name = opts.name !== undefined ? (opts.name ?? '').trim() : role.name
   if (opts.name !== undefined && !name) throw new BadRequestError('Nombre es requerido')
+
+  const wasAdmin = role.isOrgAdmin
+  const becameAdmin = opts.isOrgAdmin !== undefined ? opts.isOrgAdmin : wasAdmin
   const priority =
-    opts.priorityLevel !== undefined ? opts.priorityLevel : role.priorityLevel
+    opts.priorityLevel !== undefined
+      ? opts.priorityLevel
+      : opts.isOrgAdmin !== undefined
+        ? becameAdmin
+          ? Math.min(role.priorityLevel, 10)
+          : Math.max(role.priorityLevel, 100)
+        : role.priorityLevel
   if (priority < 0 || priority > 255) throw new BadRequestError('NivelPrioridad debe ser 0-255')
 
   await pool

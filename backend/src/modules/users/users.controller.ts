@@ -31,6 +31,33 @@ const AssignRolesSchema = z.object({
   roleIds: z.array(z.string().uuid('Rol inválido')),
 })
 
+const ChangeMyPasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Contraseña actual requerida'),
+  newPassword: z.string().min(6, 'Nueva contraseña mínima 6 caracteres'),
+})
+
+export async function changeMyPasswordHandler(
+  req: Request,
+  res: Response<ApiResponse<void>>,
+  next: NextFunction
+) {
+  try {
+    const parsed = ChangeMyPasswordSchema.safeParse(req.body)
+    if (!parsed.success) {
+      const errors: Record<string, string[]> = {}
+      parsed.error.issues.forEach((i) => {
+        const k = i.path.join('.')
+        if (!errors[k]) errors[k] = []
+        errors[k].push(i.message)
+      })
+      throw new BadRequestError('Datos inválidos', errors)
+    }
+    const auth = (req as unknown as AuthReq).auth
+    await usersService.changeOwnPassword(auth, parsed.data, req)
+    res.status(200).json({ success: true, data: undefined as any, message: 'Contraseña actualizada correctamente' })
+  } catch (e) { next(e) }
+}
+
 export async function listUsersHandler(
   req: Request,
   res: Response<ApiResponse<PaginatedResult<User & { projectsCount: number; rolesCount: number }>>>,

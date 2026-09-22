@@ -18,60 +18,67 @@ contributionsRouter.use(requireAuth)
 
 const projectIdFromParams = (req: Request) => String((req.params as any).projectId || '')
 
+function eitherOr(
+  primary: (req: Request, _res: any, next: any) => void,
+  fallback: (req: Request, _res: any, next: any) => void,
+) {
+  return (req: Request, _res: any, next: any) => {
+    try {
+      primary(req, _res, (err?: any) => {
+        if (!err) return next()
+        fallback(req, _res, next)
+      })
+    } catch (e) {
+      fallback(req, _res, next)
+    }
+  }
+}
+
 contributionsRouter.get(
   '/',
-  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
-  requirePermission('aportes.ver'),
+  eitherOr(requirePermission('aportes.ver'), requireResourcePermission('PROJECT', 'VER', projectIdFromParams)),
   listProjectContributionsEndpoint,
 )
 contributionsRouter.get(
   '/:contributionId',
-  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
-  requirePermission('aportes.ver'),
+  eitherOr(requirePermission('aportes.ver'), requireResourcePermission('PROJECT', 'VER', projectIdFromParams)),
   getContributionEndpoint,
 )
 contributionsRouter.post(
   '/',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.crear'),
+  eitherOr(requirePermission('aportes.crear'), requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams)),
   createContributionEndpoint,
 )
 contributionsRouter.patch(
   '/:contributionId',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.editar'),
+  eitherOr(requirePermission('aportes.editar'), requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams)),
   updateContributionEndpoint,
 )
 contributionsRouter.delete(
   '/:contributionId',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.eliminar'),
+  eitherOr(requirePermission('aportes.eliminar'), requireResourcePermission('PROJECT', 'ADMINISTRAR', projectIdFromParams)),
   deleteContributionEndpoint,
 )
 
 contributionsRouter.get(
   '/:contributionId/temas',
-  requireResourcePermission('PROJECT', 'VER', projectIdFromParams),
-  requirePermission('aportes.ver'),
+  eitherOr(requirePermission('aportes.ver'), requireResourcePermission('PROJECT', 'VER', projectIdFromParams)),
   listLinkedTopicsEndpoint,
 )
 contributionsRouter.post(
   '/:contributionId/temas',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.editar'),
+  eitherOr(requirePermission('aportes.editar'), requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams)),
   linkTopicEndpoint,
 )
 contributionsRouter.delete(
   '/:contributionId/temas/:topicId',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.editar'),
+  eitherOr(requirePermission('aportes.editar'), requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams)),
   unlinkTopicEndpoint,
 )
 
 contributionsRouter.post(
   '/:contributionId/compartir',
-  requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams),
-  requirePermission('aportes.compartir'),
+  eitherOr(requirePermission('aportes.compartir'), requireResourcePermission('PROJECT', 'EDITAR', projectIdFromParams)),
   (_req: Request, res: any) => {
     res.status(501).json({
       success: false,

@@ -8,6 +8,7 @@ import {
   permanentlyDeleteUserHandler,
   listRolesHandler,
   assignRolesHandler,
+  changeMyPasswordHandler,
 } from './users.controller'
 import { requireAuth } from '../../shared/middleware/auth'
 import { requirePermission } from '../../shared/middleware/rbac'
@@ -16,6 +17,7 @@ const usersRouter = Router()
 
 usersRouter.use(requireAuth)
 
+usersRouter.post('/me/change-password', changeMyPasswordHandler)
 usersRouter.get('/', requirePermission('usuarios.ver'), listUsersHandler)
 usersRouter.get('/roles', requirePermission('roles.ver'), listRolesHandler)
 usersRouter.post('/', requirePermission('usuarios.crear'), createUserHandler)

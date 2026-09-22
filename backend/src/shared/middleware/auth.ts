@@ -22,6 +22,7 @@ declare global {
 }
 
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  if (req.method === 'OPTIONS') return next()
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) {
     return next(new UnauthorizedError('Token de autorización requerido'))
@@ -42,6 +43,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
 }
 
 export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  if (req.method === 'OPTIONS') return next()
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) return next()
   const token = header.slice(7)

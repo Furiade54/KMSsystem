@@ -40,7 +40,7 @@ export interface User {
   lastLogin?: string | null
   createdAt: string
   updatedAt?: string | null
-  roles?: Array<{ id: string; name: string; isSystemRole: boolean; priorityLevel?: number; assignedAt?: string | null; assignedBy?: string | null }>
+  roles?: Array<{ id: string; name: string; isSystemRole: boolean; priorityLevel?: number; isOrgAdmin?: boolean; assignedAt?: string | null; assignedBy?: string | null }>
   isOrgAdmin?: boolean
 }
 
@@ -60,7 +60,9 @@ export interface Role {
   name: string
   description?: string | null
   isSystemRole: boolean
+  /** @deprecated Usar isOrgAdmin. Mantener por compatibilidad con datos históricos */
   priorityLevel: number
+  isOrgAdmin: boolean
   createdAt: string
   updatedAt?: string | null
   permissions?: RolePermission[]
@@ -70,6 +72,8 @@ export interface Role {
 export interface CreateRoleDto {
   name: string
   description?: string | null
+  isOrgAdmin?: boolean
+  /** @deprecated Usar isOrgAdmin */
   priorityLevel?: number
   permissionCodes?: PermissionCode[]
 }
@@ -77,6 +81,8 @@ export interface CreateRoleDto {
 export interface UpdateRoleDto {
   name?: string
   description?: string | null
+  isOrgAdmin?: boolean
+  /** @deprecated Usar isOrgAdmin */
   priorityLevel?: number
 }
 
@@ -100,7 +106,9 @@ export interface RoleAssignment {
   roleName: string
   roleDescription?: string | null
   isSystemRole: boolean
+  /** @deprecated Usar isOrgAdmin */
   priorityLevel?: number
+  isOrgAdmin?: boolean
   assignedAt?: string | null
   assignedBy?: string | null
   assignedByName?: string | null

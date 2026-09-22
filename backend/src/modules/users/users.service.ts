@@ -1,10 +1,15 @@
 import type { Request } from 'express'
 import crypto from 'crypto'
 import { getDbPool, sql } from '../../shared/db/pool'
-import { hashPassword } from '../../shared/auth/crypto'
+import { hashPassword, comparePassword } from '../../shared/auth/crypto'
 import { logAuditRecord } from '../../shared/db/audit'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError'
 import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
+import {
+  SYSTEM_ROLE_MEMBER_NAME,
+  SYSTEM_ROLE_MEMBER_PERMISSIONS,
+  SYSTEM_ROLE_ADMIN_NAME,
+} from '../auth/auth.service'
 import type {
   User,
   Role,
@@ -91,13 +96,15 @@ type RoleRow = {
 }
 
 export function mapRoleRow(row: RoleRow): Role {
+  const priorityLevel = row.NivelPrioridad != null ? Number(row.NivelPrioridad) : 50
   return {
     id: String(row.Id),
     organizationId: row.IdOrganizacion ? String(row.IdOrganizacion) : null,
     name: String(row.Nombre),
     description: row.Descripcion ?? null,
     isSystemRole: row.IdOrganizacion === null,
-    priorityLevel: row.NivelPrioridad != null ? Number(row.NivelPrioridad) : 50,
+    priorityLevel,
+    isOrgAdmin: priorityLevel <= 25,
     createdAt: sqlLocalToIso(row.FechaCreacion as any),
     updatedAt: null,
   }
@@ -117,6 +124,7 @@ type RoleAssignmentRow = {
 }
 
 function mapRoleAssignment(row: RoleAssignmentRow): RoleAssignment {
+  const priorityLevel = row.NivelPrioridad != null ? Number(row.NivelPrioridad) : 50
   return {
     id: String(row.Id),
     userId: String(row.IdUsuario),
@@ -124,7 +132,8 @@ function mapRoleAssignment(row: RoleAssignmentRow): RoleAssignment {
     roleName: String(row.Nombre),
     roleDescription: row.Descripcion ?? null,
     isSystemRole: row.IdOrganizacionRol === null,
-    priorityLevel: row.NivelPrioridad != null ? Number(row.NivelPrioridad) : 50,
+    priorityLevel,
+    isOrgAdmin: priorityLevel <= 25,
     assignedAt: sqlLocalToIsoOrNull(row.FechaAsignacion as any),
     assignedBy: row.AsignadoPor ? String(row.AsignadoPor) : null,
     assignedByName: row.AsignadoPorNombre ?? null,
@@ -525,6 +534,50 @@ export async function updateUser(
   return detail
 }
 
+export async function changeOwnPassword(
+  auth: UserAuth,
+  opts: { currentPassword: string; newPassword: string },
+  req?: Request | null
+): Promise<void> {
+  const newPwd = opts.newPassword
+  if (!opts.currentPassword) throw new BadRequestError('Contraseña actual requerida')
+  if (!newPwd || newPwd.length < 6) throw new BadRequestError('La nueva contraseña debe tener al menos 6 caracteres')
+  if (opts.currentPassword === newPwd) throw new BadRequestError('La nueva contraseña no puede ser igual a la actual')
+
+  const pool = await getDbPool()
+  const cur = pool.request()
+  cur.input('userId', sql.UniqueIdentifier, auth.userId)
+  cur.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+  const { recordset } = await cur.query<{ ClaveHash: string; NombreCompleto: string | null }>(
+    `SELECT ClaveHash, NombreCompleto FROM dbo.Usuarios WHERE Id=@userId AND IdOrganizacion=@orgId`
+  )
+  const row = recordset[0]
+  if (!row) throw new NotFoundError('Usuario no encontrado')
+
+  const matches = await comparePassword(opts.currentPassword, row.ClaveHash ?? '')
+  if (!matches) throw new BadRequestError('Contraseña actual incorrecta')
+
+  const newHash = await hashPassword(newPwd)
+  const up = pool.request()
+  up.input('userId', sql.UniqueIdentifier, auth.userId)
+  up.input('orgId', sql.UniqueIdentifier, auth.organizationId)
+  up.input('hash', sql.NVarChar(sql.MAX), newHash)
+  await up.query(
+    `UPDATE dbo.Usuarios SET ClaveHash = @hash, FechaActualizacion = GETDATE() WHERE Id = @userId AND IdOrganizacion = @orgId`
+  )
+
+  await logAuditRecord({
+    organizationId: auth.organizationId,
+    userId: auth.userId,
+    action: 'USER_PASSWORD_CHANGED_SELF',
+    resourceType: 'USER' as any,
+    resourceId: auth.userId,
+    resourceName: row.NombreCompleto ?? undefined,
+    extra: { self: true },
+    req: req ?? null,
+  })
+}
+
 export async function softDeleteUser(
   auth: UserAuth,
   userId: string,
@@ -736,4 +789,89 @@ export async function assignRoles(
     req: req ?? null,
   })
   return roles
+}
+
+export type SyncRolesResult = {
+  organizationsScanned: number
+  memberRolesSynced: number
+  adminRolesSynced: number
+  permissionsAdded: number
+}
+
+export async function syncSystemRoleDefaults(): Promise<SyncRolesResult> {
+  const pool = await getDbPool()
+  const result: SyncRolesResult = {
+    organizationsScanned: 0,
+    memberRolesSynced: 0,
+    adminRolesSynced: 0,
+    permissionsAdded: 0,
+  }
+  const orgs = await pool.request().query<{ Id: string }>(`SELECT Id FROM dbo.Organizaciones`)
+  result.organizationsScanned = orgs.recordset.length
+
+  const codesToSyncMember = Array.from(SYSTEM_ROLE_MEMBER_PERMISSIONS)
+
+  for (const org of orgs.recordset) {
+    const orgId = String(org.Id)
+    const rolesQ = pool.request()
+    rolesQ.input('orgId', sql.UniqueIdentifier, orgId)
+    rolesQ.input('memberName', sql.NVarChar(100), SYSTEM_ROLE_MEMBER_NAME)
+    rolesQ.input('adminName', sql.NVarChar(100), SYSTEM_ROLE_ADMIN_NAME)
+    const rolesR = await rolesQ.query<{ Id: string; Name: string; IsSystemRole: number }>(`
+      SELECT Id, Nombre AS Name, EsRolSistema AS IsSystemRole
+      FROM dbo.Roles
+      WHERE IdOrganizacion = @orgId AND EsRolSistema = 1
+        AND (Nombre = @memberName OR Nombre = @adminName)
+    `)
+    const memberRole = rolesR.recordset.find((r) => r.Name === SYSTEM_ROLE_MEMBER_NAME)
+    const adminRole = rolesR.recordset.find((r) => r.Name === SYSTEM_ROLE_ADMIN_NAME)
+
+    if (adminRole) {
+      const insertAdmin = pool.request()
+      insertAdmin.input('roleId', sql.UniqueIdentifier, adminRole.Id)
+      insertAdmin.input('orgId', sql.UniqueIdentifier, orgId)
+      const res = await insertAdmin.query<{ inserted: number }>(`
+        SET NOCOUNT ON;
+        DECLARE @inserted TABLE (IdPermiso UNIQUEIDENTIFIER);
+        INSERT PermisosRol(IdRol, IdPermiso)
+          OUTPUT INSERTED.IdPermiso INTO @inserted
+        SELECT @roleId, p.Id
+        FROM dbo.Permisos p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM dbo.PermisosRol pr
+          WHERE pr.IdRol = @roleId AND pr.IdPermiso = p.Id
+        );
+        SELECT COUNT(*) AS inserted FROM @inserted;
+      `)
+      const rowsAdded = Number(res.recordset[0]?.inserted ?? 0)
+      result.permissionsAdded += rowsAdded
+      if (rowsAdded > 0) result.adminRolesSynced += 1
+    }
+
+    if (memberRole && codesToSyncMember.length > 0) {
+      const inList = codesToSyncMember.map((c) => `'${c.replace(/'/g, "''")}'`).join(',')
+      const insertMember = pool.request()
+      insertMember.input('roleId', sql.UniqueIdentifier, memberRole.Id)
+      insertMember.input('orgId', sql.UniqueIdentifier, orgId)
+      const res = await insertMember.query<{ inserted: number }>(`
+        SET NOCOUNT ON;
+        DECLARE @inserted TABLE (IdPermiso UNIQUEIDENTIFIER);
+        INSERT PermisosRol(IdRol, IdPermiso)
+          OUTPUT INSERTED.IdPermiso INTO @inserted
+        SELECT @roleId, p.Id
+        FROM dbo.Permisos p
+        WHERE p.Codigo IN (${inList})
+          AND NOT EXISTS (
+            SELECT 1 FROM dbo.PermisosRol pr
+            WHERE pr.IdRol = @roleId AND pr.IdPermiso = p.Id
+          );
+        SELECT COUNT(*) AS inserted FROM @inserted;
+      `)
+      const rowsAdded = Number(res.recordset[0]?.inserted ?? 0)
+      result.permissionsAdded += rowsAdded
+      if (rowsAdded > 0) result.memberRolesSynced += 1
+    }
+  }
+
+  return result
 }
