@@ -511,8 +511,54 @@ function PermissionsDrawer({
     setSelected(new Set(initialCodes))
   }, [initialCodes, role.id])
 
-  const [collapsedLevels, setCollapsedLevels] = useState<Set<PermissionLevel>>(new Set())
-  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set())
+  const [collapsedLevels, setCollapsedLevels] = useState<Set<PermissionLevel>>(
+    () => new Set(PERMISSION_LEVEL_ORDER.filter((lvl) => Object.keys(grouped[lvl]).length > 0))
+  )
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(() => {
+    const s = new Set<string>()
+    for (const lvl of PERMISSION_LEVEL_ORDER) {
+      for (const cat of Object.keys(grouped[lvl])) s.add(`${lvl}__${cat}`)
+    }
+    return s
+  })
+  const [openLevel, setOpenLevel] = useState<PermissionLevel | null>(null)
+  const [openCatByLevel, setOpenCatByLevel] = useState<Record<PermissionLevel, string | null>>(() => ({
+    ORGANIZACION: null,
+    PROYECTO: null,
+    RECURSO: null,
+    SISTEMA: null,
+  }))
+
+  function toggleLevelOpen(lvl: PermissionLevel, expand: boolean) {
+    setCollapsedLevels((prev) => {
+      if (!expand) {
+        const n = new Set(prev)
+        n.add(lvl)
+        return n
+      }
+      const n = new Set(PERMISSION_LEVEL_ORDER.filter((x) => Object.keys(grouped[x]).length > 0))
+      n.delete(lvl)
+      return n
+    })
+    setOpenLevel(expand ? lvl : null)
+  }
+
+  function toggleCatOpen(lvl: PermissionLevel, cat: string, expand: boolean) {
+    const key = `${lvl}__${cat}`
+    setCollapsedCats((prev) => {
+      const catsOfLevel = Object.keys(grouped[lvl]).map((c) => `${lvl}__${c}`)
+      if (!expand) {
+        const n = new Set(prev)
+        n.add(key)
+        return n
+      }
+      const n = new Set(prev)
+      for (const c of catsOfLevel) n.add(c)
+      n.delete(key)
+      return n
+    })
+    setOpenCatByLevel((prev) => ({ ...prev, [lvl]: expand ? cat : null }))
+  }
 
   const totalSelected = selected.size
   const totalAll = useMemo(
@@ -566,8 +612,14 @@ function PermissionsDrawer({
       subtitle={
         <span>
           Seleccionados <span className="font-semibold">{totalSelected}</span> / {totalAll}
+          {totalAll > 0 && (
+            <span className="ml-2 text-[10px] text-muted-foreground tabular-nums">
+              ({Math.round((totalSelected / totalAll) * 100)}%)
+            </span>
+          )}
         </span>
       }
+      progressPct={totalAll > 0 ? (totalSelected / totalAll) * 100 : 0}
       onClose={onClose}
       footer={
         <>
@@ -604,7 +656,7 @@ function PermissionsDrawer({
         </>
       }
     >
-      <div className="p-4 space-y-6">
+      <div className="p-3 space-y-2.5">
         {PERMISSION_LEVEL_ORDER.map((lvl) => {
           const cats = grouped[lvl]
           const codes = Object.values(cats).flat()
@@ -612,92 +664,123 @@ function PermissionsDrawer({
           const levelOn = codes.every((it) => selected.has(it.code as PermissionCode))
           const levelPartial = codes.some((it) => selected.has(it.code as PermissionCode)) && !levelOn
           const collapsed = collapsedLevels.has(lvl)
+          const accent = LEVEL_ACCENT[lvl]
+          const levelChecked = codes.filter((it) => selected.has(it.code as PermissionCode)).length
           return (
-            <div key={lvl} className="rounded-xl border border-border bg-surface overflow-hidden">
-              <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-surface-secondary/50">
+            <div key={lvl} className={clsx('rounded-lg border border-border bg-surface overflow-hidden')}>
+              <div className={clsx('flex items-center gap-2 px-3 py-1.5 border-b border-border', accent.headerBg)}>
                 <button
                   type="button"
-                  className="btn-ghost-square w-7 h-7 text-muted-foreground"
-                  onClick={() => setCollapsedLevels((s) => { const n = new Set(s); collapsed ? n.delete(lvl) : n.add(lvl); return n })}
+                  className="btn-ghost-square w-6 h-6 text-muted-foreground"
+                  onClick={() => toggleLevelOpen(lvl, collapsed)}
                 >
-                  {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  <span
+                    className={clsx(
+                      'inline-block transition-transform duration-200 ease-in-out motion-reduce:transition-none',
+                      collapsed ? 'rotate-0' : 'rotate-90'
+                    )}
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </span>
                 </button>
                 <TriCheckbox
                   checked={levelOn}
                   partial={levelPartial}
                   disabled={locked}
                   onChange={(v) => toggleLevel(lvl, v)}
+                  title={
+                    levelOn ? 'Desmarcar todo el nivel' :
+                      levelPartial ? `Marcar todo el nivel (${levelChecked}/${codes.length} ya seleccionados)` :
+                        'Marcar todo el nivel'
+                  }
                 />
                 <LevelSectionHeaderInline level={lvl} count={codes.length} />
               </div>
-              {!collapsed && Object.keys(cats).length > 0 && (
-                <div className="divide-y divide-border">
-                  {Object.entries(cats).map(([cat, items]) => {
-                    const catOn = items.every((it) => selected.has(it.code as PermissionCode))
-                    const catPartial = items.some((it) => selected.has(it.code as PermissionCode)) && !catOn
-                    const key = `${lvl}__${cat}`
-                    const catCollapsed = collapsedCats.has(key)
-                    return (
-                      <div key={key}>
-                        <div className="flex items-center gap-3 px-4 py-2">
-                          <button
-                            type="button"
-                            className="btn-ghost-square w-7 h-7 text-muted-foreground"
-                            onClick={() => setCollapsedCats((s) => { const n = new Set(s); catCollapsed ? n.delete(key) : n.add(key); return n })}
-                          >
-                            {catCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                          </button>
-                          <TriCheckbox
-                            checked={catOn}
-                            partial={catPartial}
-                            disabled={locked}
-                            onChange={(v) => toggleCat(lvl, cat, v)}
-                          />
-                          <p className="text-[12px] font-semibold text-foreground/85 flex-1">
-                            {cat}
-                            <span className="ml-2 text-[10.5px] font-normal text-muted-foreground">
-                              {items.length} permisos
-                            </span>
-                          </p>
-                        </div>
-                        {!catCollapsed && (
-                          <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
-                            {items.map((it) => {
-                              const on = selected.has(it.code as PermissionCode)
-                              return (
-                                <label
-                                  key={it.id}
-                                  className={clsx(
-                                    'group flex items-start gap-2 rounded-md px-2 py-1.5 -mx-1 transition-colors cursor-pointer',
-                                    on ? 'bg-brand-500/8 dark:bg-brand-500/10' : 'hover:bg-surface-secondary/50'
-                                  )}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="mt-1.5"
-                                    checked={on}
-                                    disabled={locked}
-                                    onChange={(e) => toggle(it.code as PermissionCode, e.target.checked)}
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-[11.5px] font-mono leading-tight text-foreground/95 group-hover:text-foreground truncate">
-                                      {it.code}
-                                    </p>
-                                    {it.description && (
-                                      <p className="text-[10.5px] text-muted-foreground leading-tight mt-0.5 line-clamp-2">
-                                        {it.description}
-                                      </p>
-                                    )}
-                                  </div>
-                                </label>
-                              )
-                            })}
+              {Object.keys(cats).length > 0 && (
+                <Collapsible open={!collapsed}>
+                  <div className="divide-y divide-border">
+                    {Object.entries(cats).map(([cat, items]) => {
+                      const catOn = items.every((it) => selected.has(it.code as PermissionCode))
+                      const catPartial = items.some((it) => selected.has(it.code as PermissionCode)) && !catOn
+                      const key = `${lvl}__${cat}`
+                      const catCollapsed = collapsedCats.has(key)
+                      const catChecked = items.filter((it) => selected.has(it.code as PermissionCode)).length
+                      return (
+                        <div key={key}>
+                          <div className="flex items-center gap-2 px-3 py-1">
+                            <button
+                              type="button"
+                              className="btn-ghost-square w-6 h-6 text-muted-foreground"
+                              onClick={() => toggleCatOpen(lvl, cat, catCollapsed)}
+                            >
+                              <span
+                                className={clsx(
+                                  'inline-block transition-transform duration-200 ease-in-out motion-reduce:transition-none',
+                                  catCollapsed ? 'rotate-0' : 'rotate-90'
+                                )}
+                              >
+                                <ChevronRight className="w-3 h-3" />
+                              </span>
+                            </button>
+                            <TriCheckbox
+                              checked={catOn}
+                              partial={catPartial}
+                              disabled={locked}
+                              onChange={(v) => toggleCat(lvl, cat, v)}
+                              title={
+                                catOn ? `Desmarcar "${cat}"` :
+                                  catPartial ? `Marcar todo "${cat}" (${catChecked}/${items.length} ya seleccionados)` :
+                                    `Marcar todo "${cat}"`
+                              }
+                            />
+                            <p className="text-[11.5px] font-semibold text-foreground/85 flex-1">
+                              {cat}
+                              <span className="ml-1.5 text-[10px] font-normal text-muted-foreground tabular-nums">
+                                {catChecked}/{items.length}
+                              </span>
+                            </p>
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                          <Collapsible open={!catCollapsed}>
+                            <div className="px-3 py-1.5 grid grid-cols-1 gap-y-0.5">
+                              {items.map((it) => {
+                                const on = selected.has(it.code as PermissionCode)
+                                const permTitle = it.description ? `${it.code} — ${it.description}` : it.code
+                                return (
+                                  <label
+                                    key={it.id}
+                                    title={permTitle}
+                                    className={clsx(
+                                      'group flex items-center gap-2 rounded-md px-2 py-0.5 -mx-1 transition-colors cursor-pointer',
+                                      on ? 'bg-brand-500/8 dark:bg-brand-500/10' : 'hover:bg-surface-secondary/50'
+                                    )}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="shrink-0"
+                                      checked={on}
+                                      disabled={locked}
+                                      onChange={(e) => toggle(it.code as PermissionCode, e.target.checked)}
+                                    />
+                                    <div className="min-w-0 flex-1 flex items-baseline gap-2">
+                                      <p className="text-[11px] font-mono leading-snug text-foreground/95 group-hover:text-foreground whitespace-nowrap shrink-0">
+                                        {it.code}
+                                      </p>
+                                      {it.description && (
+                                        <p className="text-[10.5px] text-muted-foreground leading-snug truncate">
+                                          {it.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </Collapsible>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </Collapsible>
               )}
             </div>
           )
@@ -771,30 +854,42 @@ function DrawerShell({
   onClose,
   children,
   footer,
+  progressPct,
 }: {
   title: string
   subtitle?: React.ReactNode
   onClose: () => void
   children: React.ReactNode
   footer?: React.ReactNode
+  progressPct?: number
 }) {
   return (
     <div className="fixed inset-0 z-[80] bg-foreground/30 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="absolute inset-y-0 right-0 w-full sm:max-w-[680px] bg-surface border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-150"
+        className="absolute inset-y-0 right-0 w-full sm:max-w-[860px] bg-surface border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3 border-b border-border p-4 pr-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="font-semibold text-foreground flex items-center gap-2">
-              <ShieldPlus className="w-4 h-4 text-muted-foreground" />
-              {title}
-            </h2>
-            {subtitle && <p className="text-[11.5px] text-muted-foreground mt-0.5">{subtitle}</p>}
+        <div className="border-b border-border">
+          <div className="flex items-start gap-3 p-4 pr-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold text-foreground flex items-center gap-2">
+                <ShieldPlus className="w-4 h-4 text-muted-foreground" />
+                {title}
+              </h2>
+              {subtitle && <p className="text-[11.5px] text-muted-foreground mt-0.5">{subtitle}</p>}
+            </div>
+            <button className="btn-ghost-square w-8 h-8 text-muted-foreground hover:text-foreground" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button className="btn-ghost-square w-8 h-8 text-muted-foreground hover:text-foreground" onClick={onClose}>
-            <X className="w-4 h-4" />
-          </button>
+          {progressPct !== undefined && (
+            <div className="h-1 w-full bg-surface-secondary">
+              <div
+                className="h-full bg-brand-500 transition-all duration-200"
+                style={{ width: `${Math.max(0, Math.min(100, progressPct))}%` }}
+              />
+            </div>
+          )}
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
         {footer && (
@@ -807,13 +902,66 @@ function DrawerShell({
   )
 }
 
+const LEVEL_ACCENT: Record<PermissionLevel, { chipBg: string; chipBorder: string; chipText: string; headerBg: string; labelText: string }> = {
+  ORGANIZACION: {
+    chipBg: 'bg-brand-500/10 dark:bg-brand-500/10',
+    chipBorder: 'border-brand-500/30',
+    chipText: 'text-brand-700 dark:text-brand-200',
+    headerBg: 'bg-brand-500/5 dark:bg-brand-500/5',
+    labelText: 'text-brand-700 dark:text-brand-200',
+  },
+  PROYECTO: {
+    chipBg: 'bg-brand-500/10 dark:bg-brand-500/10',
+    chipBorder: 'border-brand-500/30',
+    chipText: 'text-brand-700 dark:text-brand-200',
+    headerBg: 'bg-brand-500/5 dark:bg-brand-500/5',
+    labelText: 'text-brand-700 dark:text-brand-200',
+  },
+  RECURSO: {
+    chipBg: 'bg-brand-500/10 dark:bg-brand-500/10',
+    chipBorder: 'border-brand-500/30',
+    chipText: 'text-brand-700 dark:text-brand-200',
+    headerBg: 'bg-brand-500/5 dark:bg-brand-500/5',
+    labelText: 'text-brand-700 dark:text-brand-200',
+  },
+  SISTEMA: {
+    chipBg: 'bg-brand-500/10 dark:bg-brand-500/10',
+    chipBorder: 'border-brand-500/30',
+    chipText: 'text-brand-700 dark:text-brand-200',
+    headerBg: 'bg-brand-500/5 dark:bg-brand-500/5',
+    labelText: 'text-brand-700 dark:text-brand-200',
+  },
+}
+
+function Collapsible({ open, children, className }: { open: boolean; children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={clsx(
+        'grid transition-all duration-200 ease-in-out motion-reduce:transition-none',
+        open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none',
+        className
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function LevelSectionHeaderInline({ level, count }: { level: PermissionLevel; count: number }) {
+  const accent = LEVEL_ACCENT[level]
   return (
     <div className="flex-1 flex items-center gap-2">
-      <span className="text-[12px] font-semibold uppercase tracking-wide text-foreground/80">
+      <span className={clsx('text-[12px] font-semibold uppercase tracking-wide', accent.labelText)}>
         {PERMISSION_LEVEL_LABEL[level]}
       </span>
-      <span className="text-[10.5px] text-muted-foreground rounded-full px-2 py-0.5 bg-surface-secondary">
+      <span className={clsx(
+        'text-[10px] rounded-full px-2 py-0.5 border',
+        accent.chipBg,
+        accent.chipBorder,
+        accent.chipText,
+      )}>
         {count}
       </span>
     </div>
@@ -825,11 +973,13 @@ function TriCheckbox({
   partial,
   disabled,
   onChange,
+  title,
 }: {
   checked: boolean
   partial?: boolean
   disabled?: boolean
   onChange: (nextChecked: boolean) => void
+  title?: string
 }) {
   return (
     <label
@@ -837,6 +987,7 @@ function TriCheckbox({
         'inline-flex items-center justify-center w-7 h-7 rounded-md transition',
         disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-surface-secondary'
       )}
+      title={title}
     >
       <input
         type="checkbox"
