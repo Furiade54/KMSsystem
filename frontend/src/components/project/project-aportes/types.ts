@@ -95,6 +95,8 @@ export type AporteCallbacks = {
   onClearAttachedFile: () => void
   onOpenAttachFilePicker: () => void
   onPickExistingAttachedFile: (fileId: string, file: { name: string; sizeBytes?: number | null; mimeType?: string | null }) => void
+  onGotoAttachedFile: (fileId: string) => void
+  onGotoLinkedTopic: (topicId: string) => void
 }
 
 export type AporteLinkTopicUiState = {

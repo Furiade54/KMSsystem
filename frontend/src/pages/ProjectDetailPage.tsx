@@ -244,6 +244,13 @@ function ProjectDetailPage() {
   const [docsAreaContextMenu, setDocsAreaContextMenu] = useState<{ x: number; y: number } | null>(null)
   const folderCtxRef = useRef<HTMLDivElement | null>(null)
   const fileCtxRef = useRef<HTMLDivElement | null>(null)
+  const highlightClearRef = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (highlightClearRef.current) window.clearTimeout(highlightClearRef.current)
+      highlightClearRef.current = null
+    }
+  }, [])
   const [ctxClamp, setCtxClamp] = useState<{
     folder?: { left: number; top: number; maxH: number }
     file?: { left: number; top: number; maxH: number }
@@ -1468,8 +1475,16 @@ function ProjectDetailPage() {
         for (const it of all.items) {
           if (it.id.toLowerCase() === target) { file = it; break }
         }
-      } catch (_e) {
-        // no se pudo, continuamos sin carpeta
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : (e && typeof e === 'object' && 'message' in e ? String((e as any).message) : 'Error de red desconocido')
+        if (msg && msg.toLowerCase().includes('could not establish connection')) {
+          setPageToast({ kind: 'error', title: 'No se pudo cargar la lista de archivos', message: 'Perdimos conexión momentáneamente. Cargá la pestaña Documentos del proyecto y volvé a intentar.' })
+          setActiveTab('docs')
+          setHighlightFileId(fileId)
+          if (highlightClearRef.current) window.clearTimeout(highlightClearRef.current)
+          highlightClearRef.current = window.setTimeout(() => setHighlightFileId(null), 4000)
+          return
+        }
       }
     }
     const fId = file?.folderId ?? null
@@ -1484,7 +1499,7 @@ function ProjectDetailPage() {
         if (!node || !node.parentId) break
         cur = node.parentId
       }
-    } else {
+    } else if (!file) {
       setPageToast({ kind: 'error', title: 'No se pudo ubicar el archivo', message: 'No se pudo ubicar la carpeta del archivo. Pruebe abriendo la pestaña Documentos primero y vuelva a intentar.' })
     }
     const ancestorSet = chain.length ? new Set(chain) : null
@@ -1492,10 +1507,27 @@ function ProjectDetailPage() {
     setSelectedFolderId(fId)
     setActiveTab('docs')
     setHighlightFileId(fileId)
-    window.setTimeout(() => {
+    if (highlightClearRef.current) window.clearTimeout(highlightClearRef.current)
+    highlightClearRef.current = window.setTimeout(() => {
+      highlightClearRef.current = null
       setHighlightFileId((curr) => (curr === fileId ? null : curr))
     }, 4000)
   }, [filesQuery.data, meetingFilesQuery.data, masterFilesQuery.data, flatFolderById, projectId, fetchFiles, setPageToast])
+
+  const onGotoLinkedTopic = useCallback((topicId: string) => {
+    setActiveTab('topics')
+    topicItemForms.state.setExpandedTopicId((prev) => (prev === topicId ? prev : topicId))
+    void Promise.resolve().then(() => {
+      const el = document.querySelector<HTMLElement>(`[data-topic-id="${topicId.toLowerCase()}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        el.classList.add('ring-brand-500/60', 'ring-2', 'ring-offset-1', 'ring-offset-white', 'dark:ring-offset-slate-900')
+        window.setTimeout(() => {
+          el.classList.remove('ring-brand-500/60', 'ring-2', 'ring-offset-1', 'ring-offset-white', 'dark:ring-offset-slate-900')
+        }, 4000)
+      }
+    })
+  }, [topicItemForms.state])
 
   const linkTopicItemFileMutation = useMutation({
     mutationFn: (payload: { topicId: string; itemId: string; fileId: string }) =>
@@ -2566,6 +2598,8 @@ function ProjectDetailPage() {
             onClearAttachedFile,
             onOpenAttachFilePicker: openAporteFilePicker,
             onPickExistingAttachedFile,
+            onGotoAttachedFile: (fileId: string) => void onGotoLinkedFile(fileId),
+            onGotoLinkedTopic: (topicId: string) => onGotoLinkedTopic(topicId),
           }}
           linkTopicUi={{
             availableTopicsLoading: topicsQuery.isLoading,

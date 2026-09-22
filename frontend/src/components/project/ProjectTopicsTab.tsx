@@ -331,7 +331,7 @@ export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
             </div>
           ) : (
             topicsItems.map((topic) => (
-              <div key={topic.id} className="flex flex-col">
+              <div key={topic.id} data-topic-id={topic.id.toLowerCase()} className="flex flex-col rounded-lg transition-all duration-300">
                 <div className="p-4 flex items-start gap-4">
                   <button
                     type="button"

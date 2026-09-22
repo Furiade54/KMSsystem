@@ -9,6 +9,7 @@ import {
   Paperclip,
   Loader2,
   X,
+  FileText,
 } from 'lucide-react'
 import type {
   ApiContributionPriority,
@@ -17,6 +18,7 @@ import type {
   ApiProjectContribution,
 } from '@/services/aportes.service'
 import { initials } from '../fileHelpers'
+import { formatBytes } from '@/services/files.service'
 
 interface Props {
   items: ApiProjectContribution[]
@@ -34,6 +36,8 @@ interface Props {
     onConfirmDelete: (a: ApiProjectContribution) => void
     onOpenLinkTopic: (a: ApiProjectContribution) => void
     onUnlinkTopic: (aporteId: string, topicId: string) => void
+    onGotoAttachedFile?: (fileId: string) => void
+    onGotoLinkedTopic?: (topicId: string) => void
   }
   formatRelativeTime: (iso: string | null | undefined) => string
 }
@@ -208,11 +212,25 @@ export default function AportesHistoryList(props: Props) {
                       <span className="truncate">{a.externalUrl}</span>
                     </a>
                   )}
-                  {a.attachedFileName && (
-                    <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400">
-                      <Paperclip className="w-3 h-3" />
-                      <span className="max-w-[200px] truncate">{a.attachedFileName}</span>
-                    </span>
+                  {a.attachedFileName && a.attachedFileId && (
+                    <button
+                      type="button"
+                      onClick={() => callbacks.onGotoAttachedFile?.(a.attachedFileId as string)}
+                      className="inline-flex items-center gap-1.5 max-w-[98%] rounded-md bg-surface-secondary/80 ring-1 ring-black/5 px-2 py-1 pr-1 cursor-pointer hover:bg-brand-500/10 hover:ring-brand-500/40 transition-colors text-violet-600 dark:text-violet-400"
+                      title={`${a.attachedFileName} — Click para ubicar en Documentos`}
+                      disabled={!callbacks.onGotoAttachedFile}
+                    >
+                      <FileText className="w-3 h-3 shrink-0 text-muted-foreground" />
+                      <Paperclip className="w-3 h-3 shrink-0" />
+                      <span className="truncate text-[11px] text-foreground/85 max-w-[220px]">
+                        {a.attachedFileName}
+                      </span>
+                      {a.attachedFileSizeBytes != null && (
+                        <span className="text-[10px] text-muted-foreground/70 shrink-0 ml-1">
+                          {formatBytes(a.attachedFileSizeBytes)}
+                        </span>
+                      )}
+                    </button>
                   )}
                   {a.authorName && (
                     <span className="text-slate-500">— {a.authorName}</span>
@@ -224,23 +242,34 @@ export default function AportesHistoryList(props: Props) {
                       Temas:
                     </span>
                     {a.linkedTopics.map((t) => (
-                      <span
+                      <div
                         key={t.id}
                         className="group inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                       >
-                        <span className="max-w-[180px] truncate">{t.title}</span>
+                        <button
+                          type="button"
+                          onClick={() => callbacks.onGotoLinkedTopic?.(t.id)}
+                          disabled={!callbacks.onGotoLinkedTopic}
+                          title={`${t.title || 'Tema'} — Click para ubicar en la pestaña Temas`}
+                          className="max-w-[180px] truncate text-left disabled:cursor-default hover:underline"
+                        >
+                          {t.title}
+                        </button>
                         {canEdit && (
                           <button
                             type="button"
                             title="Desvincular tema"
                             disabled={pending.unlinkTopicPending}
-                            onClick={() => callbacks.onUnlinkTopic(a.id, t.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              callbacks.onUnlinkTopic(a.id, t.id)
+                            }}
                             className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-40"
                           >
                             <X className="w-3 h-3" />
                           </button>
                         )}
-                      </span>
+                      </div>
                     ))}
                   </div>
                 )}

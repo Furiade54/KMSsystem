@@ -259,6 +259,8 @@ export default function ProjectAportesTab(props: ProjectAportesTabProps) {
             onConfirmDelete: (a) => forms.setConfirmDeleteAporte(a),
             onOpenLinkTopic: callbacks.onOpenLinkTopic,
             onUnlinkTopic: callbacks.onUnlinkTopic,
+            onGotoAttachedFile: callbacks.onGotoAttachedFile,
+            onGotoLinkedTopic: callbacks.onGotoLinkedTopic,
           }}
           formatRelativeTime={formatRelativeTime}
         />
