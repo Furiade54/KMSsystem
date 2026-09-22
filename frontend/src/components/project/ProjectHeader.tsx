@@ -226,33 +226,47 @@ export default function ProjectHeader(props: ProjectHeaderProps) {
             <UserPlus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Invitar</span>
           </button>
-          <button
-            className="btn-primary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
-            disabled={!project || isUploading}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label={isUploading ? `Subiendo archivo ${uploadPercent}%` : 'Subir archivo al proyecto'}
-            title={isUploading ? `Subiendo ${uploadPercent}%` : 'Subir archivo'}
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span className="hidden sm:inline">Subiendo {uploadPercent}%</span>
-              </>
-            ) : (
-              <>
-                <Upload className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Subir</span>
-              </>
-            )}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={onFilePicked}
-            disabled={!project || isUploading}
-            multiple
-          />
+          {(activeTab === 'docs' || isUploading) && (
+            <>
+              <button
+                className="btn-primary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
+                disabled={!project || isUploading}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label={isUploading ? `Subiendo archivo ${uploadPercent}%` : 'Subir archivo al proyecto'}
+                title={isUploading ? `Subiendo ${uploadPercent}%` : 'Subir archivo'}
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span className="hidden sm:inline">Subiendo {uploadPercent}%</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Subir</span>
+                  </>
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={onFilePicked}
+                disabled={!project || isUploading}
+                multiple
+              />
+            </>
+          )}
+          {activeTab !== 'docs' && !isUploading && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={onFilePicked}
+              disabled={!project || isUploading}
+              multiple
+            />
+          )}
           <div className="relative">
             <button
               className="btn-secondary p-1 h-8 w-8 focus-visible:ring-2 focus-visible:ring-brand-500/60"
