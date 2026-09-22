@@ -13,7 +13,6 @@ import {
   Users,
   Save,
   ChevronRight,
-  ChevronDown,
   Crown,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -535,13 +534,6 @@ function PermissionsDrawer({
     }
     return s
   })
-  const [openLevel, setOpenLevel] = useState<PermissionLevel | null>(null)
-  const [openCatByLevel, setOpenCatByLevel] = useState<Record<PermissionLevel, string | null>>(() => ({
-    ORGANIZACION: null,
-    PROYECTO: null,
-    RECURSO: null,
-    SISTEMA: null,
-  }))
 
   function toggleLevelOpen(lvl: PermissionLevel, expand: boolean) {
     setCollapsedLevels((prev) => {
@@ -554,7 +546,6 @@ function PermissionsDrawer({
       n.delete(lvl)
       return n
     })
-    setOpenLevel(expand ? lvl : null)
   }
 
   function toggleCatOpen(lvl: PermissionLevel, cat: string, expand: boolean) {
@@ -571,7 +562,6 @@ function PermissionsDrawer({
       n.delete(key)
       return n
     })
-    setOpenCatByLevel((prev) => ({ ...prev, [lvl]: expand ? cat : null }))
   }
 
   const totalSelected = selected.size
