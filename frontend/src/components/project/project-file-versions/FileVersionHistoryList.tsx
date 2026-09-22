@@ -1,4 +1,5 @@
 import type { ApiFileVersion, formatBytes as FormatBytesType } from '../../../services/files.service'
+import { formatWallClockString } from '../../../services/projects.service'
 import type { FileVersionCallbacks, FileVersionMutationsPending, FileVersionUiState } from './types'
 
 interface Props {
@@ -14,23 +15,6 @@ function shortHash(h: string | null): string {
   if (!h) return '—'
   if (h.length <= 12) return h
   return `${h.slice(0, 8)}…${h.slice(-4)}`
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return iso
-  }
 }
 
 export function FileVersionHistoryList(props: Props) {
@@ -154,7 +138,7 @@ export function FileVersionHistoryList(props: Props) {
                     </span>
                   )}
                   <span className="text-xs text-slate-600">
-                    {formatDate(v.createdAt)}
+                    {formatWallClockString(v.createdAt, { dateStyle: 'short', timeStyle: 'short' })}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">

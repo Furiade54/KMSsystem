@@ -119,6 +119,12 @@ export function extractWallClockParts(isoLike: string | null | undefined): {
   return parts
 }
 
+export function formatWallClockDate(isoLike: string | null | undefined): string {
+  const p = extractWallClockParts(isoLike)
+  if (!p) return 'Fecha por definir'
+  return `${p.year}/${pad2(p.month)}/${pad2(p.day)}`
+}
+
 export function formatWallClockString(
   isoLike: string | null | undefined,
   opts: { dateStyle?: 'full' | 'long' | 'medium' | 'short'; timeStyle?: 'full' | 'long' | 'medium' | 'short' } = {
@@ -128,12 +134,10 @@ export function formatWallClockString(
 ): string {
   const p = extractWallClockParts(isoLike)
   if (!p) return 'Fecha por definir'
-  const d = new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
-  try {
-    return new Intl.DateTimeFormat(undefined, opts as Intl.DateTimeFormatOptions).format(d)
-  } catch {
-    return `${pad2(p.day)}/${pad2(p.month)}/${p.year} ${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}`
-  }
+  const datePart = `${p.year}/${pad2(p.month)}/${pad2(p.day)}`
+  const timePart = `${pad2(p.hour)}:${pad2(p.minute)}${opts.timeStyle === 'medium' ? `:${pad2(p.second)}` : ''}`
+  if (!opts.timeStyle) return datePart
+  return `${datePart} ${timePart}`
 }
 
 export async function fetchProjects(params: {
