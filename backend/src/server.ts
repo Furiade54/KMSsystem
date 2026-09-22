@@ -12,30 +12,26 @@ async function bootstrap() {
     await ensureAuditAndCommentTables()
     try {
       const pc = await ensurePermissionCatalog()
-      if (env.NODE_ENV !== 'production') {
-        if (pc.inserted > 0 || pc.updated > 0) {
-          console.log(
-            `📘 Catálogo permisos: insertados=${pc.inserted} actualizados=${pc.updated} total=${pc.total}/54`,
-          )
-        } else {
-          console.log(`✅ Catálogo permisos: ${pc.total}/54 al día, nada que añadir.`)
-        }
+      if (pc.inserted > 0 || pc.updated > 0) {
+        console.log(
+          `📘 Catálogo permisos: insertados=${pc.inserted} actualizados=${pc.updated} total=${pc.total}/54`,
+        )
+      } else {
+        console.log(`✅ Catálogo permisos: ${pc.total}/54 al día, nada que añadir.`)
       }
     } catch (e) {
       console.warn('⚠️  Sync catálogo permisos falló (no crítico):', (e as Error)?.message ?? e)
     }
     try {
       const res = await syncSystemRoleDefaults()
-      if (env.NODE_ENV !== 'production') {
-        if (res.permissionsAdded > 0) {
-          console.log(
-            `🔄 Sync roles sistema: orgs=${res.organizationsScanned} permisosAñadidos=${res.permissionsAdded} (AdminSync=${res.adminRolesSynced} rolesMiembroSync=${res.memberRolesSynced})`,
-          )
-        } else {
-          console.log(
-            `✅ Sync roles sistema: orgs=${res.organizationsScanned} — todo al día, nada que añadir.`,
-          )
-        }
+      if (res.permissionsAdded > 0) {
+        console.log(
+          `🔄 Sync roles sistema: orgs=${res.organizationsScanned} permisosAñadidos=${res.permissionsAdded} (AdminSync=${res.adminRolesSynced} rolesMiembroSync=${res.memberRolesSynced})`,
+        )
+      } else {
+        console.log(
+          `✅ Sync roles sistema: orgs=${res.organizationsScanned} — todo al día, nada que añadir.`,
+        )
       }
     } catch (e) {
       console.warn('⚠️  Sync roles sistema falló (no crítico):', (e as Error)?.message ?? e)
