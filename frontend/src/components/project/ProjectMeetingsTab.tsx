@@ -29,7 +29,7 @@ import type { ApiTopic } from '@/services/project-topics.service'
 import type { ProjectMember } from '@/services/projects.service'
 import type { ApiFile } from '@/services/files.service'
 import { formatBytes } from '@/services/files.service'
-import { formatRelativeTime } from '@/services/projects.service'
+import { formatRelativeTime, formatWallClockString } from '@/services/projects.service'
 import { colorForKind, iconForKind, meetingStatusBadgeClass, meetingStatusLabel } from './fileHelpers'
 import { fileKind } from '@/services/files.service'
 import type {
@@ -382,9 +382,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                       </div>
                       <div className="mt-1 text-[11.5px] text-muted-foreground flex flex-wrap items-center gap-x-2.5 gap-y-1">
                         <span>
-                          {m.meetingAt
-                            ? new Date(m.meetingAt).toLocaleString()
-                            : 'Fecha por definir'}
+                          {formatWallClockString(m.meetingAt)}
                         </span>
                         <span className="text-border/70">·</span>
                         <span>Creada {formatRelativeTime(m.createdAt)}</span>

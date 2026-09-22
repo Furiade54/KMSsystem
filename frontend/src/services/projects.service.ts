@@ -90,6 +90,52 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   return `Hace ${yr} año${yr === 1 ? '' : 's'}`
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+export function extractWallClockParts(isoLike: string | null | undefined): {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+} | null {
+  if (!isoLike) return null
+  const s = String(isoLike).replace('Z', '')
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?/)
+  if (!m) return null
+  const [, y, mo, da, h, mi, se] = m
+  const parts = {
+    year: Number(y),
+    month: Number(mo),
+    day: Number(da),
+    hour: Number(h),
+    minute: Number(mi),
+    second: se ? Number(se) : 0,
+  }
+  if (parts.year < 1970 || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31) return null
+  return parts
+}
+
+export function formatWallClockString(
+  isoLike: string | null | undefined,
+  opts: { dateStyle?: 'full' | 'long' | 'medium' | 'short'; timeStyle?: 'full' | 'long' | 'medium' | 'short' } = {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }
+): string {
+  const p = extractWallClockParts(isoLike)
+  if (!p) return 'Fecha por definir'
+  const d = new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
+  try {
+    return new Intl.DateTimeFormat(undefined, opts as Intl.DateTimeFormatOptions).format(d)
+  } catch {
+    return `${pad2(p.day)}/${pad2(p.month)}/${p.year} ${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}`
+  }
+}
+
 export async function fetchProjects(params: {
   recent?: boolean
   destacados?: boolean

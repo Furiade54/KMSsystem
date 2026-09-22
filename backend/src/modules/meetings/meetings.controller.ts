@@ -4,7 +4,7 @@ import { DB_MEETING_STATUS } from '../../../../packages/shared-types/src'
 import { getDbPool, sql } from '../../shared/db/pool'
 import { logAuditRecord } from '../../shared/db/audit'
 import { AppError, NotFoundError } from '../../shared/errors/AppError'
-import { sqlLocalToIso, sqlLocalToIsoOrNull } from '../../shared/utils/date'
+import { sqlLocalToIso, sqlLocalToIsoOrNull, sqlWallClockToLocalIso, sqlWallClockToMssqlDatetime2 } from '../../shared/utils/date'
 
 type MeetingRow = {
   Id: string
@@ -44,7 +44,7 @@ function mapMeeting(row: MeetingRow, linkedTopicsIds?: string[]): Meeting {
     projectId: String(row.IdProyecto),
     title: String(row.Titulo),
     description: row.Descripcion ?? null,
-    meetingAt: sqlLocalToIsoOrNull(row.FechaReunion as any),
+    meetingAt: sqlWallClockToLocalIso(row.FechaReunion as any),
     createdBy: row.IdCreador ? String(row.IdCreador) : null,
     minutesFileId: row.IdActaArchivo ? String(row.IdActaArchivo) : null,
     status: DB_TO_API_STATUS[rawStatus] ?? 'SCHEDULED',
@@ -90,8 +90,8 @@ async function fetchLinkedTopicsIds(meetingIds: string[]): Promise<Record<string
 function parseOptionalMeetingDate(value: unknown, fieldName: string): Date | null | undefined {
   if (value === undefined) return undefined
   if (value === null || value === '') return null
-  const parsed = new Date(String(value))
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = sqlWallClockToMssqlDatetime2(value)
+  if (parsed == null) {
     throw new AppError(`${fieldName} no es una fecha válida`, 400)
   }
   return parsed
