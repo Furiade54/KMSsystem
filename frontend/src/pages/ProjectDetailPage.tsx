@@ -1676,11 +1676,18 @@ function ProjectDetailPage() {
   })
 
   // --- Temas vinculados a reunión ---
+  // Carga automática: cuando usuario entra al tab Temas de una reunión expandida
+  // (meetingPanelTab === 'topics' + expandedMeetingId)
+  // o cuando usuario abre drawer de vincular temas (= linkingTopicsForMeetingId).
+  const meetingLinkedTopicsForMeetingId: string | null =
+    linkingTopicsForMeetingId ??
+    (meetingPanelTab === 'topics' ? expandedMeetingId : null)
+
   const meetingLinkedTopicsQuery = useQuery({
-    queryKey: ['project', 'meeting', 'linked-topics', projectId, linkingTopicsForMeetingId],
+    queryKey: ['project', 'meeting', 'linked-topics', projectId, meetingLinkedTopicsForMeetingId],
     queryFn: async () =>
-      apiFetchMeetingLinkedTopics(projectId, linkingTopicsForMeetingId as string),
-    enabled: Boolean(projectId) && Boolean(linkingTopicsForMeetingId),
+      apiFetchMeetingLinkedTopics(projectId, meetingLinkedTopicsForMeetingId as string),
+    enabled: Boolean(projectId) && Boolean(meetingLinkedTopicsForMeetingId),
   })
 
   const linkTopicToMeetingMutation = useMutation({
@@ -1698,6 +1705,8 @@ function ProjectDetailPage() {
           }
         }
       )
+      // Invalida tanto para expandedMeetingId como para linkingTopicsForMeetingId
+      // para que se vean refrescados ambos casos.
       queryClient.invalidateQueries({
         queryKey: ['project', 'meeting', 'linked-topics', projectId, updatedMeeting.id],
       })
@@ -2459,6 +2468,7 @@ function ProjectDetailPage() {
             )
           }}
           onGotoLinkedFile={onGotoLinkedFile}
+          onGotoLinkedTopic={(topicId: string) => onGotoLinkedTopic(topicId)}
         />
       )}
 

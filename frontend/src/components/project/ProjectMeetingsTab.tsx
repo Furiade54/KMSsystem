@@ -135,6 +135,7 @@ export type ProjectMeetingsTabProps = {
   unlinkTopicPending: boolean
   onLinkTopic: (meetingId: string, topicId: string) => void
   onUnlinkTopic: (meetingId: string, topicId: string) => void
+  onGotoLinkedTopic?: (topicId: string) => void
 }
 
 const AGENDA_STATES: Array<MeetingAgendaItem['state']> = [
@@ -220,6 +221,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
     unlinkTopicPending,
     onLinkTopic,
     onUnlinkTopic,
+    onGotoLinkedTopic,
     onNewMeeting,
     onEditMeeting,
     onSubmitAddParticipant,
@@ -865,34 +867,81 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                             </div>
                           )}
 
-                          {meetingLinkedTopicsLoading &&
-                          linkingTopicsForMeetingId === m.id ? (
-                            <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground p-2">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando temas...
-                            </div>
-                          ) : (m.linkedTopicsIds ?? []).length === 0 ? (
-                            <div className="p-4 text-center text-[11.5px] text-muted-foreground border border-dashed border-border/70 rounded-lg">
-                              No hay temas vinculados a esta reunión.
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap gap-2">
-                              {meetingLinkedTopicsItems
-                                .filter((x) =>
-                                  (m.linkedTopicsIds ?? []).some((y) => y === x.topicId)
-                                )
-                                .map((lt) => (
+                          {(() => {
+                            // Cargando PARA ESTA reunión m: si user abrió drawer vincular
+                            // o si expandió esta reunión y está posicionado en tab Temas.
+                            const loadingForThisMeeting =
+                              meetingLinkedTopicsLoading &&
+                              (linkingTopicsForMeetingId === m.id ||
+                                (expandedMeetingId === m.id &&
+                                  meetingPanelTab === 'topics'))
+
+                            const chipsLinked = meetingLinkedTopicsItems.filter((x) =>
+                              (m.linkedTopicsIds ?? []).some((y) => y === x.topicId)
+                            )
+
+                            // Fallback: si query no trajo objetos pero sí conocemos IDs +
+                            // tenemos el catálogo global de temas del proyecto, renderizar
+                            // igual los chips (evita "espacio en blanco" entre expansión y
+                            // llegada de la respuesta).
+                            const chips =
+                              chipsLinked.length > 0
+                                ? chipsLinked
+                                : (() => {
+                                    const ids = new Set(m.linkedTopicsIds ?? [])
+                                    if (ids.size === 0) return []
+                                    return (projectTopicsItems ?? [])
+                                      .filter((t) => ids.has(t.id))
+                                      .map((t) => ({ topicId: t.id, title: t.title }))
+                                  })()
+
+                            if (loadingForThisMeeting && chips.length === 0) {
+                              return (
+                                <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground p-2">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando
+                                  temas...
+                                </div>
+                              )
+                            }
+                            if ((m.linkedTopicsIds ?? []).length === 0) {
+                              return (
+                                <div className="p-4 text-center text-[11.5px] text-muted-foreground border border-dashed border-border/70 rounded-lg">
+                                  No hay temas vinculados a esta reunión.
+                                </div>
+                              )
+                            }
+                            if (chips.length === 0) {
+                              return (
+                                <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground p-2">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando
+                                  temas...
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className="flex flex-wrap gap-2">
+                                {chips.map((lt) => (
                                   <div
                                     key={lt.topicId}
-                                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-surface-secondary border border-border/70 text-[11.5px] text-foreground"
+                                    className={clsx(
+                                      'inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full border text-[11.5px] text-foreground transition',
+                                      onGotoLinkedTopic
+                                        ? 'bg-surface-secondary border-border/70 hover:border-brand-400 hover:bg-brand-50/60 cursor-pointer'
+                                        : 'bg-surface-secondary border-border/70 select-none'
+                                    )}
+                                    onClick={() => onGotoLinkedTopic?.(lt.topicId)}
                                   >
                                     <LinkIcon className="w-3.5 h-3.5 text-brand-600" />
                                     <span className="truncate max-w-[220px]">{lt.title}</span>
                                     {canEditMeetings && (
                                       <button
                                         type="button"
-                                        title="Desvincular"
+                                        title="Desvincular tema"
                                         disabled={unlinkTopicPending}
-                                        onClick={() => onUnlinkTopic(m.id, lt.topicId)}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          onUnlinkTopic(m.id, lt.topicId)
+                                        }}
                                         className="btn-ghost-square w-5.5 h-5.5 -mr-0.5 text-muted-foreground hover:text-rose-600 disabled:opacity-50"
                                       >
                                         <XIcon className="w-3.5 h-3.5" />
@@ -900,8 +949,9 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     )}
                                   </div>
                                 ))}
-                            </div>
-                          )}
+                              </div>
+                            )
+                          })()}
                         </div>
                       )}
 
