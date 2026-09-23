@@ -242,18 +242,7 @@ function Sidebar() {
       </nav>
 
       <footer className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-surface/95 backdrop-blur-sm">
-        <div className="px-2 py-1">
-          <button
-            type="button"
-            onClick={() => setPwdModalOpen(true)}
-            className="sidebar-item w-full text-xs text-muted-foreground hover:text-foreground"
-            title="Cambiar mi contraseña"
-          >
-            <Key className="w-3.5 h-3.5 shrink-0" />
-            <span className="flex-1 text-left">Cambiar mi contraseña</span>
-          </button>
-        </div>
-        <div className="px-2 py-2 border-t border-border" ref={userMenuRef}>
+        <div className="px-2 py-2" ref={userMenuRef}>
           <button
             type="button"
             onClick={() => setUserMenuOpen((s) => !s)}
