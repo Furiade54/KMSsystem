@@ -466,7 +466,7 @@ export default function ProjectTopicsTab(props: ProjectTopicsTabProps) {
                         </select>
                         {canAddTopicItems && (
                           <button
-                            className="btn-secondary text-[11px] px-2 h-7 inline-flex items-center"
+                            className="btn-primary text-[11px] px-2 h-7 inline-flex items-center shadow-sm"
                             onClick={onNewTopicItem}
                           >
                             <Plus className="w-3 h-3 mr-1" />
