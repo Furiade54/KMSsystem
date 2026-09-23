@@ -324,7 +324,7 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
               <Star className="w-4 h-4 text-muted-foreground hover:text-amber-500 transition-colors" />
             </button>
             <button
-              className="btn-secondary px-2.5 rounded-md text-[11.5px] h-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 min-w-[32px]"
+              className="btn-primary px-2.5 rounded-md text-[11.5px] h-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 min-w-[32px] shadow-sm"
               onClick={() => {
                 setNewFolderName('')
                 setNewFolderError('')
