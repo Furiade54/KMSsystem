@@ -470,7 +470,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     showAddMeetingParticipant === m.id ? null : m.id
                                   )
                                 }
-                                className="btn-secondary h-8 text-[11.5px] px-2.5"
+                                className="btn-primary h-8 text-[11.5px] px-2.5 shadow-sm"
                               >
                                 <Plus className="w-3.5 h-3.5" />
                                 <span className="ml-1.5">Agregar asistente</span>
@@ -637,7 +637,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     })
                                   }
                                   disabled={props.createAgendaItemPending}
-                                  className="btn-secondary h-8 px-2.5 text-[11.5px]"
+                                  className="btn-primary h-8 px-2.5 text-[11.5px] shadow-sm"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
                                   <span className="ml-1.5">Nuevo ítem</span>
@@ -769,7 +769,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                     linkingTopicsForMeetingId === m.id ? null : m.id
                                   )
                                 }
-                                className="btn-secondary h-8 text-[11.5px] px-2.5"
+                                className="btn-primary h-8 text-[11.5px] px-2.5 shadow-sm"
                                 disabled={linkTopicPending}
                               >
                                 <LinkIcon className="w-3.5 h-3.5" />
@@ -969,7 +969,7 @@ export default function ProjectMeetingsTab(props: ProjectMeetingsTabProps) {
                                   onOpenFilePicker()
                                 }}
                                 disabled={setMinutesFilePending}
-                                className="btn-secondary h-8 px-2.5 text-[11.5px]"
+                                className="btn-primary h-8 px-2.5 text-[11.5px] shadow-sm"
                               >
                                 <LinkIcon className="w-3.5 h-3.5" />
                                 <span className="ml-1.5">
