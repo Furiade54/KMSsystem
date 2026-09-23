@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Building2,
   FolderKanban,
@@ -22,6 +22,8 @@ import {
   X,
   Check,
   Lock,
+  UserCircle2,
+  ChevronRight,
 } from 'lucide-react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -82,6 +84,26 @@ function Sidebar() {
   const [pwdShowConfirm, setPwdShowConfirm] = useState(false)
   const [pwdSuccess, setPwdSuccess] = useState<string | null>(null)
   const [pwdFieldError, setPwdFieldError] = useState<string | null>(null)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
+      }
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [userMenuOpen])
 
   const pwdMutation = useMutation({
     mutationFn: async (payload: { currentPassword: string; newPassword: string }) =>
@@ -231,26 +253,86 @@ function Sidebar() {
             <span className="flex-1 text-left">Cambiar mi contraseña</span>
           </button>
         </div>
-        <div className="px-2 py-2 flex items-center gap-2 border-t border-border">
-          <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white text-sm font-semibold ring-1 ring-surface-tertiary/30">
-            {avatarInitials}
-          </div>
-          <div className="flex-1 min-w-0 leading-tight">
-            <p className="text-xs font-medium text-foreground truncate" title={displayName}>
-              {displayName}
-            </p>
-            <p className="text-[11px] text-muted-foreground truncate" title={displayEmail}>
-              {displayEmail}
-            </p>
-          </div>
+        <div className="px-2 py-2 border-t border-border" ref={userMenuRef}>
           <button
-            onClick={handleLogout}
-            className="btn-icon text-muted-foreground hover:text-foreground hover:bg-destructive/10 hover:text-destructive"
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
+            type="button"
+            onClick={() => setUserMenuOpen((s) => !s)}
+            className={clsx(
+              'w-full flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors group',
+              'text-left',
+              userMenuOpen
+                ? 'bg-surface-tertiary/40 ring-1 ring-brand-500/30'
+                : 'hover:bg-surface-tertiary/40',
+            )}
+            aria-haspopup="menu"
+            aria-expanded={userMenuOpen}
+            aria-label="Menú del usuario"
           >
-            <LogOut className="w-4 h-4" />
+            <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white text-sm font-semibold ring-1 ring-surface-tertiary/30">
+              {avatarInitials}
+            </div>
+            <div className="flex-1 min-w-0 leading-tight">
+              <p className="text-xs font-medium text-foreground truncate" title={displayName}>
+                {displayName}
+              </p>
+              <p className="text-[11px] text-muted-foreground truncate" title={displayEmail}>
+                {displayEmail}
+              </p>
+            </div>
+            <ChevronRight
+              className={clsx(
+                'w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
+                userMenuOpen && 'rotate-90 text-brand-500',
+              )}
+            />
           </button>
+
+          {userMenuOpen && (
+            <div
+              role="menu"
+              className="mt-2 mb-1 rounded-lg border border-border bg-surface shadow-xl ring-1 ring-black/5 overflow-hidden animate-in fade-in slide-in-from-bottom-1"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                disabled
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground/70 bg-surface-secondary/40 border-b border-border/70 opacity-80 cursor-not-allowed"
+                title="Próximamente: Mi perfil"
+              >
+                <UserCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1 text-left">Mi perfil</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 px-1.5 py-0.5 rounded bg-surface-tertiary/60">
+                  pronto
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setUserMenuOpen(false)
+                  setPwdModalOpen(true)
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-brand-500/10 hover:text-brand-700 dark:hover:text-brand-200 transition-colors border-b border-border/70"
+              >
+                <Key className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1 text-left">Cambiar mi contraseña</span>
+                <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground/60" />
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setUserMenuOpen(false)
+                  handleLogout()
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1 text-left">Cerrar sesión</span>
+                <ChevronRight className="w-3 h-3 shrink-0 text-destructive/60" />
+              </button>
+            </div>
+          )}
         </div>
       </footer>
 
