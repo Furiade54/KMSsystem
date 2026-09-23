@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Building2,
   FolderKanban,
@@ -388,9 +389,9 @@ function Sidebar() {
         </div>
       </footer>
 
-      {pwdModalOpen && (
+      {pwdModalOpen && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-50 bg-black/55 flex items-start sm:items-center justify-center p-4 overflow-y-auto backdrop-blur-[2px]"
+          className="fixed inset-0 z-[60] bg-black/55 flex items-start sm:items-center justify-center p-4 overflow-y-auto backdrop-blur-[2px]"
           onClick={closePwdModal}
         >
           <div
@@ -457,7 +458,7 @@ function Sidebar() {
               </div>
 
               <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <label className="text-xs font-semibold text-foreground/85">
                     Nueva contraseña
                   </label>
@@ -640,7 +641,8 @@ function Sidebar() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
