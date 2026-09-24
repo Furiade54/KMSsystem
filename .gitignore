@@ -77,10 +77,11 @@ datosconexion.md
 *.md
 
 # ============================================================
-# Scripts específicos por VPS (no se versionan, son locales)
+# Scripts específicos por VPS / plantillas locales
+# NOTA: deploy-kms.sh SÍ está versionado como pieza oficial del proyecto
+# (no está en ignore).
 # ============================================================
-deploy-kms.sh
-seed-first-user.sh
 zdeply.md
 zresultados.md
 presentacion-KMS-intro.md
+seed-first-user.sh

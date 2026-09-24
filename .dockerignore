@@ -30,11 +30,15 @@
 .git
 .github
 
-# Scripts específicos por VPS / utilidades locales — NO entrar en imágenes Docker
-deploy-kms.sh
+# Scripts específicos por VPS / utilidades locales — NO entrar en imágenes Docker.
+# Nota: deploy-kms.sh SÍ está versionado en el repo oficial (no gitignore),
+# pero NO debe ir dentro de imágenes Docker (no tiene sentido dentro de un
+# container ya que su función es desplegar los propios containers desde
+# el host VPS).
 deploy.sh
 seed-first-user.sh
 zdeply.md
 zresultados.md
 presentacion-KMS-intro.md
 smoke_permisos_e2e.mjs
+deploy-kms.sh
