@@ -75,3 +75,12 @@ datosconexion.md
 /infra/
 /infra/
 *.md
+
+# ============================================================
+# Scripts específicos por VPS (no se versionan, son locales)
+# ============================================================
+deploy-kms.sh
+seed-first-user.sh
+zdeply.md
+zresultados.md
+presentacion-KMS-intro.md

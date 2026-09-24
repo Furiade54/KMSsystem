@@ -29,3 +29,12 @@
 .dockerignore
 .git
 .github
+
+# Scripts específicos por VPS / utilidades locales — NO entrar en imágenes Docker
+deploy-kms.sh
+deploy.sh
+seed-first-user.sh
+zdeply.md
+zresultados.md
+presentacion-KMS-intro.md
+smoke_permisos_e2e.mjs
