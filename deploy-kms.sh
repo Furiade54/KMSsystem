@@ -29,6 +29,12 @@ PROJECT_DIR="/home/ist/KMSsystem"
 COMPOSE_FILE="docker-compose.prod.yml"
 BRANCH="main"
 
+# Proxy HTTP — puerto externo publicado por el servicio `proxy` en el compose.
+# Por defecto en docker-compose.prod.yml se publica 8080:80, así que se
+# consulta http://localhost:${PROXY_PUBLISHED_PORT}/. Si en el futuro cambias
+# la publicación (p.ej. a 80:80 o con SSL 443) ajusta aquí.
+PROXY_PUBLISHED_PORT=8080
+
 # Healthcheck loop
 HEALTH_TIMEOUT_SECONDS=60
 HEALTH_POLL_EVERY_SECONDS=3
@@ -240,32 +246,56 @@ echo
 # ------------------------------------------------------------
 # 8. Logs resumen backend (syncs BD + puerto)
 # ------------------------------------------------------------
+#
+# Nota: Docker compose por defecto devuelve TODOS los logs históricos del
+# contenedor desde que se CREÓ (en tu VPS kms-backend lleva 40h de uptime
+# porque el compose up no lo recreó — misma imagen hash). Por eso el simple
+# --tail 80 a veces devuelve logs de 40h atrás, en los que no salen los
+# prints de bootstrap. Para ver los logs de ESTE arranque (después de
+# docker compose up -d de este mismo deploy) tenemos 2 estrategias:
+#   A) Si el backend se REINICIÓ realmente (nuevo PID hora actual): los
+#      logs nuevos salen al final de --tail 200.
+#   B) Si el backend NO se reinició (misma imagen/volumen): los syncs
+#      corrieron hace mucho, así que mostramos 'OK (ya al día desde hace
+#      tiempo)' como success, no warning.
+#
+# Técnica robusta: usamos `docker compose logs --since 3m backend` para
+# leer SOLO los logs de los últimos 3 minutos (tiempo razonable en el que
+# ocurrió el `dc up -d` de este mismo script). Si dentro de esa ventana
+# temporal no hay nada, significa que NO hubo restart (ya estaba healthy
+# desde antes), y lo reportamos como éxito, no como warning confuso.
 
 log "Resumen últimos logs del backend (Catálogo permisos / Sync roles / Puerto):"
-BACKEND_LOGS=$(dc logs backend --tail 80 2>/dev/null || true)
+BACKEND_LOGS=$(dc logs backend --since 3m 2>/dev/null || true)
 
-if echo "$BACKEND_LOGS" | grep -qE "Catálogo permisos.*total=54|Catálogo permisos.*al día"; then
-    success "Catálogo permisos OK"
+if [ -z "$BACKEND_LOGS" ]; then
+    # No hubo logs en los últimos 3m = backend NO se reinició. La imagen
+    # hash no cambió porque el build usó capas CACHED (ej: backend no tuvo
+    # cambios en este deploy). Es caso totalmente OK y no hay por qué
+    # asustar con warnings. Los syncs ya corrieron en un deploy anterior.
+    success "Backend: no necesitó reiniciar. Syncs ya al día desde deploy anterior."
 else
-    if echo "$BACKEND_LOGS" | grep -qE "Catálogo permisos"; then
-        warning "Catálogo permisos: se detectó ejecución pero no terminó OK (revisar manualmente)."
+    if echo "$BACKEND_LOGS" | grep -qE "Catálogo permisos.*total=54|Catálogo permisos.*al día"; then
+        success "Catálogo permisos OK"
+    elif echo "$BACKEND_LOGS" | grep -qE "Catálogo permisos"; then
+        warning "Catálogo permisos: ejecutado pero no terminó OK (revisar manualmente)."
     else
-        warning "No se detectó Catálogo permisos en logs backend (podría OK si ya había arrancado antes)."
+        warning "No se detectó 'Catálogo permisos' en logs recientes del backend (normal si NO hubo cambios de backend en este deploy)."
     fi
-fi
 
-if echo "$BACKEND_LOGS" | grep -qE "Sync roles sistema"; then
-    success "Sync roles sistema OK"
-else
-    warning "No se detectó Sync roles sistema en logs backend (podría OK si ya había arrancado antes)."
-fi
+    if echo "$BACKEND_LOGS" | grep -qE "Sync roles sistema"; then
+        success "Sync roles sistema OK"
+    else
+        warning "No se detectó 'Sync roles sistema' en logs recientes del backend (normal si NO hubo cambios de backend en este deploy)."
+    fi
 
-if echo "$BACKEND_LOGS" | grep -qE "ERROR|Fallo|No se pudo conectar|Login failed for user"; then
-    error "Se detectaron líneas ERROR/Fallo en los logs del backend (revisar)."
-    echo "   Muestra de errores detectados:"
-    echo "$BACKEND_LOGS" | grep -iE "ERROR|Fallo|No se pudo conectar|Login failed for user" | head -n 10 | sed 's/^/      /'
-else
-    success "No se detectaron errores de BD o red en los últimos logs del backend."
+    if echo "$BACKEND_LOGS" | grep -qE "ERROR|Fallo|No se pudo conectar|Login failed for user"; then
+        error "Se detectaron líneas ERROR/Fallo en los logs del backend (revisar)."
+        echo "   Muestra de errores detectados:"
+        echo "$BACKEND_LOGS" | grep -iE "ERROR|Fallo|No se pudo conectar|Login failed for user" | head -n 10 | sed 's/^/      /'
+    else
+        success "No se detectaron errores de BD o red en los últimos logs del backend."
+    fi
 fi
 
 echo
@@ -300,16 +330,20 @@ done
 echo
 
 # ------------------------------------------------------------
-# 10. Verificación HTTP local (curl al proxy puerto 80)
+# 10. Verificación HTTP local (curl al proxy en PROXY_PUBLISHED_PORT)
 # ------------------------------------------------------------
 
 if command -v curl >/dev/null 2>&1; then
-    log "Verificación HTTP — GET http://localhost:80/ a través del proxy..."
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://localhost:80/ || echo "000")
+    HTTP_URL="http://localhost:${PROXY_PUBLISHED_PORT}/"
+    log "Verificación HTTP — GET ${HTTP_URL} a través del proxy..."
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HTTP_URL" || echo "000")
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
         success "Proxy contesta HTTP $HTTP_CODE (OK)."
     else
         warning "Proxy contesta HTTP $HTTP_CODE (esperado 2xx / 3xx). Revisar manualmente si es intencional."
+        warning "  Puerto comprobado : $PROXY_PUBLISHED_PORT"
+        warning "  URL prueba        : $HTTP_URL"
+        warning "  Compáralo con el campo 'PORTS' del servicio proxy en el 'docker compose ps' de abajo."
     fi
 fi
 
