@@ -35,6 +35,13 @@ BRANCH="main"
 # la publicación (p.ej. a 80:80 o con SSL 443) ajusta aquí.
 PROXY_PUBLISHED_PORT=8080
 
+# Ventana temporal para leer logs recientes del backend después de `dc up -d`.
+# En el deploy anterior usaba 3m pero el usuario obtuvo aún warnings (ya
+# actualizaba deploy-kms.sh y docker compose up no reinició backend pero
+# --since 3m sí cogió logs viejos). Se sube a 5m para ser conservativo y no
+# empeorar falsos positivos si el build tarda 3.5min + up 1min.
+BACKEND_LOGS_SINCE="5m"
+
 # Healthcheck loop
 HEALTH_TIMEOUT_SECONDS=60
 HEALTH_POLL_EVERY_SECONDS=3
@@ -136,9 +143,21 @@ if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
     exit 1
 fi
 
-# Detectar cambios locales
-if [[ -n "$(git status --porcelain)" ]]; then
-    error "Hay cambios o archivos locales sin confirmar."
+# Detectar cambios locales — PERO IGNORAR explícitamente modificaciones a
+# ESTE MISMO script (deploy-kms.sh). Es intencional que en cada VPS existan
+# pequeñas diferencias locales: bit ejecutable chmod, saltos de línea
+# Windows→Linux al copiar por SCP, variable PROXY_PUBLISHED_PORT editada
+# a mano, etc. Tratar estas diferencias como "cambio pendiente" haría que
+# el guardia cancele el despliegue siempre en la primera ejecución.
+#
+# Técnica: git status --porcelain, filtramos las filas cuya ruta final sea
+# exactamente 'deploy-kms.sh' (cualquier prefijo de estado XY). Si queda
+# algo en DIRTY = sí hay cambios REALES peligrosos (otro .sh, .yml, código
+# fuente), y SÍ cancelamos despliegue.
+DIRTY=$(git status --porcelain | grep -vE '^.{0,2}[[:space:]]+deploy-kms\.sh$' || true)
+
+if [[ -n "$DIRTY" ]]; then
+    error "Hay cambios o archivos locales sin confirmar (distintos de deploy-kms.sh)."
     echo
     git status --short
     echo
@@ -146,7 +165,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
     exit 1
 fi
 
-success "Repositorio limpio en rama $BRANCH."
+success "Repositorio limpio en rama $BRANCH (modificaciones a deploy-kms.sh se ignoran intencionalmente)."
 
 # ------------------------------------------------------------
 # 3. Obtener cambios de GitHub — early exit si no hay nada nuevo
@@ -266,7 +285,7 @@ echo
 # desde antes), y lo reportamos como éxito, no como warning confuso.
 
 log "Resumen últimos logs del backend (Catálogo permisos / Sync roles / Puerto):"
-BACKEND_LOGS=$(dc logs backend --since 3m 2>/dev/null || true)
+BACKEND_LOGS=$(dc logs backend --since "$BACKEND_LOGS_SINCE" 2>/dev/null || true)
 
 if [ -z "$BACKEND_LOGS" ]; then
     # No hubo logs en los últimos 3m = backend NO se reinició. La imagen
