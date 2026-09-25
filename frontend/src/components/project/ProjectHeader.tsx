@@ -40,6 +40,7 @@ export type ProjectHeaderProps = {
   isLocalFavorite: (rt: FavoriteResourceType, id: string) => boolean | undefined
   handleToggleFavorite: (rt: FavoriteResourceType, id: string, currentLocal?: boolean) => void
   canManageMembers: boolean
+  canUploadFile: boolean
   setShowInviteMember: (v: boolean) => void
   setInviteSelectedUserId: (v: string | null) => void
   setInviteSearch: (v: string) => void
@@ -69,6 +70,7 @@ export default function ProjectHeader(props: ProjectHeaderProps) {
     isLocalFavorite,
     handleToggleFavorite,
     canManageMembers,
+    canUploadFile,
     setShowInviteMember,
     setInviteSelectedUserId,
     setInviteSearch,
@@ -230,10 +232,10 @@ export default function ProjectHeader(props: ProjectHeaderProps) {
             <>
               <button
                 className="btn-primary text-[11.5px] px-2.5 h-8 min-w-[32px] focus-visible:ring-2 focus-visible:ring-brand-500/60"
-                disabled={!project || isUploading}
+                disabled={!project || isUploading || !canUploadFile}
                 onClick={() => fileInputRef.current?.click()}
                 aria-label={isUploading ? `Subiendo archivo ${uploadPercent}%` : 'Subir archivo al proyecto'}
-                title={isUploading ? `Subiendo ${uploadPercent}%` : 'Subir archivo'}
+                title={isUploading ? `Subiendo ${uploadPercent}%` : canUploadFile ? 'Subir archivo' : 'No tienes permiso para subir archivos en este proyecto'}
               >
                 {isUploading ? (
                   <>
@@ -252,7 +254,7 @@ export default function ProjectHeader(props: ProjectHeaderProps) {
                 type="file"
                 className="hidden"
                 onChange={onFilePicked}
-                disabled={!project || isUploading}
+                disabled={!project || isUploading || !canUploadFile}
                 multiple
               />
             </>
@@ -263,7 +265,7 @@ export default function ProjectHeader(props: ProjectHeaderProps) {
               type="file"
               className="hidden"
               onChange={onFilePicked}
-              disabled={!project || isUploading}
+              disabled={!project || isUploading || !canUploadFile}
               multiple
             />
           )}
