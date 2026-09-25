@@ -50,6 +50,7 @@ export type ProjectDocsTabProps = {
   project: { id?: string; docMaestroCarpetaId?: string | null; docMaestroArchivoId?: string | null } | null | undefined
 
   createFolderMutationPending: boolean
+  canCreateFolder: boolean
   setShowNewFolder: (v: boolean) => void
   setNewFolderName: (v: string) => void
   setNewFolderError: (v: string) => void
@@ -94,6 +95,7 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
     setDocsSearchInput,
     project,
     createFolderMutationPending,
+    canCreateFolder,
     setShowNewFolder,
     setNewFolderName,
     setNewFolderError,
@@ -324,14 +326,18 @@ export default function ProjectDocsTab(props: ProjectDocsTabProps) {
               <Star className="w-4 h-4 text-muted-foreground hover:text-amber-500 transition-colors" />
             </button>
             <button
-              className="btn-primary px-2.5 rounded-md text-[11.5px] h-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 min-w-[32px] shadow-sm"
+              className="btn-primary px-2.5 rounded-md text-[11.5px] h-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 min-w-[32px] shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 setNewFolderName('')
                 setNewFolderError('')
                 setShowNewFolder(true)
               }}
-              disabled={!project || createFolderMutationPending}
-              title="Crear una nueva subcarpeta dentro de la ubicación actual"
+              disabled={!project || createFolderMutationPending || !canCreateFolder}
+              title={
+                canCreateFolder
+                  ? 'Crear una nueva subcarpeta dentro de la ubicación actual'
+                  : 'No tienes permiso para crear carpetas en este proyecto'
+              }
             >
               {createFolderMutationPending ? (
                 <>

@@ -11,11 +11,11 @@ import {
 
 const revisionsRouter = Router()
 
-revisionsRouter.use(requireAuth, requirePermission('revisiones.ver'))
-revisionsRouter.get('/', listRevisionsEndpoint)
-revisionsRouter.get('/:id', getRevisionEndpoint)
-revisionsRouter.post('/', createRevisionEndpoint)
-revisionsRouter.patch('/:id/estado', updateRevisionStatusEndpoint)
+revisionsRouter.use(requireAuth)
+revisionsRouter.get('/', requirePermission('revisiones.ver'), listRevisionsEndpoint)
+revisionsRouter.get('/:id', requirePermission('revisiones.ver'), getRevisionEndpoint)
+revisionsRouter.post('/', requirePermission('revisiones.crear'), createRevisionEndpoint)
+revisionsRouter.patch('/:id/estado', requirePermission('revisiones.ver'), updateRevisionStatusEndpoint)
 revisionsRouter.patch('/:id/asignar', requirePermission('revisiones.asignar'), assignRevisionEndpoint)
 
 export default revisionsRouter

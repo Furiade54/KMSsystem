@@ -747,16 +747,18 @@ function ProjectDetailPage() {
   })
 
   const canManageMembers = useMemo(() => {
-    if (!project?.ownerId) return false
-    if (!authUser?.id) return false
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('proyectos.miembros.gestionar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
 
   const canAdminMaster = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
     if (authUser.isOrgAdmin) return true
-    return String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()
-  }, [project, authUser])
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission(['proyectos.editar', 'proyectos.eliminar', 'proyectos.miembros.gestionar'], userPermissionSet, { mode: 'any' })
+  }, [project, authUser, userPermissionSet])
 
   const canEditMeetings = useMemo(() => {
     if (!project?.ownerId || !authUser?.id) return false
@@ -840,6 +842,37 @@ function ProjectDetailPage() {
     if (authUser.isOrgAdmin) return true
     if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
     return hasPermission('aportes.eliminar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canCreateFolder = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission(['archivos.editar', 'archivos.subir'], userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canUploadFile = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('archivos.subir', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canEditFiles = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return hasPermission('archivos.editar', userPermissionSet)
+  }, [project, authUser, userPermissionSet])
+
+  const canDeleteFiles = useMemo(() => {
+    if (!project?.ownerId || !authUser?.id) return false
+    if (authUser.isOrgAdmin) return true
+    if (String(project.ownerId).toLowerCase() === String(authUser.id).toLowerCase()) return true
+    return (
+      hasPermission('archivos.eliminar', userPermissionSet) ||
+      hasPermission(['proyectos.editar', 'proyectos.eliminar'], userPermissionSet, { mode: 'any' })
+    )
   }, [project, authUser, userPermissionSet])
 
   const designateMasterMutation = useMutation({
@@ -2283,6 +2316,7 @@ function ProjectDetailPage() {
         isLocalFavorite={isLocalFavorite}
         handleToggleFavorite={handleToggleFavorite}
         canManageMembers={canManageMembers}
+        canUploadFile={canUploadFile}
         setShowInviteMember={setShowInviteMember}
         setInviteSelectedUserId={setInviteSelectedUserId}
         setInviteSearch={setInviteSearch}
@@ -2323,6 +2357,7 @@ function ProjectDetailPage() {
           setDocsSearchInput={setDocsSearchInput}
           project={project}
           createFolderMutationPending={createFolderMutation.isPending}
+          canCreateFolder={canCreateFolder}
           setShowNewFolder={setShowNewFolder}
           setNewFolderName={setNewFolderName}
           setNewFolderError={setNewFolderError}
@@ -2794,6 +2829,8 @@ function ProjectDetailPage() {
         folderCtxRef={folderCtxRef}
         clamp={ctxClamp}
         canAdminMaster={canAdminMaster}
+        canEditFiles={canEditFiles}
+        canDeleteFiles={canDeleteFiles}
         project={project}
         isMasterFolder={
           !!folderContextMenu &&
@@ -2838,6 +2875,8 @@ function ProjectDetailPage() {
         fileCtxRef={fileCtxRef}
         clamp={ctxClamp}
         canAdminMaster={canAdminMaster}
+        canEditFiles={canEditFiles}
+        canDeleteFiles={canDeleteFiles}
         project={project}
         isMasterFile={
           !!fileContextMenu &&
@@ -2890,6 +2929,8 @@ function ProjectDetailPage() {
         createPending={createFolderMutation.isPending}
         isUploading={isUploading}
         uploadPending={uploadMutation.isPending}
+        canCreateFolder={canCreateFolder}
+        canUploadFile={canUploadFile}
         onClose={() => setDocsAreaContextMenu(null)}
         onCreateFolder={() => {
           setNewFolderName('')

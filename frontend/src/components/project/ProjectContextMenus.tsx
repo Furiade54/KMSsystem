@@ -22,6 +22,8 @@ export type FolderContextMenuProps = {
   folderCtxRef: React.MutableRefObject<HTMLDivElement | null>
   clamp: CtxClamp
   canAdminMaster: boolean
+  canEditFiles: boolean
+  canDeleteFiles: boolean
   project: unknown | null | undefined
   isMasterFolder: boolean
   onClose: () => void
@@ -42,7 +44,7 @@ export type FolderContextMenuProps = {
 export function FolderContextMenu(props: FolderContextMenuProps) {
   const {
     menu, folderCtxRef, clamp,
-    canAdminMaster, project, isMasterFolder, onClose,
+    canAdminMaster, canEditFiles, canDeleteFiles, project, isMasterFolder, onClose,
     onOpen, onRename, onMoveCopy, onToggleFavorite, isLocalFavorite,
     onClearMaster, onDesignateMasterFolder, onDelete,
     designatePending, clearPending, deletePending, deletingId,
@@ -84,7 +86,12 @@ export function FolderContextMenu(props: FolderContextMenuProps) {
             onClose()
             onRename(f)
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
+          disabled={!canEditFiles}
+          title={canEditFiles ? undefined : 'No tienes permiso para renombrar esta carpeta'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground',
+            !canEditFiles && 'opacity-50 cursor-not-allowed'
+          )}
         >
           <Edit3 className="w-4 h-4" />
           Renombrar
@@ -94,7 +101,12 @@ export function FolderContextMenu(props: FolderContextMenuProps) {
             onClose()
             onMoveCopy(f)
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
+          disabled={!canEditFiles}
+          title={canEditFiles ? undefined : 'No tienes permiso para mover o copiar esta carpeta'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground',
+            !canEditFiles && 'opacity-50 cursor-not-allowed'
+          )}
         >
           <ArrowRightLeft className="w-4 h-4" />
           Mover / Copiar
@@ -156,10 +168,15 @@ export function FolderContextMenu(props: FolderContextMenuProps) {
         <button
           onClick={() => {
             onClose()
+            if (!canDeleteFiles) return
             onDelete(f)
           }}
-          disabled={deletePending}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-status-blocked/15 text-status-blocked disabled:opacity-50"
+          disabled={deletePending || !canDeleteFiles}
+          title={canDeleteFiles ? undefined : 'No tienes permiso para eliminar esta carpeta'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md text-status-blocked disabled:opacity-50',
+            canDeleteFiles ? 'hover:bg-status-blocked/15' : 'cursor-not-allowed'
+          )}
         >
           {deletingId === f.id && deletePending ? (
             <>
@@ -190,6 +207,8 @@ export type FileContextMenuProps = {
   fileCtxRef: React.MutableRefObject<HTMLDivElement | null>
   clamp: CtxClamp
   canAdminMaster: boolean
+  canEditFiles: boolean
+  canDeleteFiles: boolean
   project: unknown | null | undefined
   isMasterFile: boolean
   onClose: () => void
@@ -213,7 +232,7 @@ export type FileContextMenuProps = {
 export function FileContextMenu(props: FileContextMenuProps) {
   const {
     menu, fileCtxRef, clamp,
-    canAdminMaster, project, isMasterFile, onClose,
+    canAdminMaster, canEditFiles, canDeleteFiles, project, isMasterFile, onClose,
     onOpenDownload, onRename, onMoveCopy, onComment,
     onToggleFavorite, isLocalFavorite,
     onClearMaster, onDesignateMasterFile, onDelete,
@@ -226,10 +245,10 @@ export function FileContextMenu(props: FileContextMenuProps) {
 
   const isFileOwner = !!(authUserId && f.ownerId && String(f.ownerId).toLowerCase() === String(authUserId).toLowerCase())
   const isProjectOwner = !!(authUserId && projectOwnerId && String(projectOwnerId).toLowerCase() === String(authUserId).toLowerCase())
-  const canDeleteFile = isFileOwner || isProjectOwner
+  const canDeleteFile = isFileOwner || isProjectOwner || canDeleteFiles
   const deleteDisabledHint = canDeleteFile
     ? undefined
-    : 'Solo el propietario del archivo o el propietario del proyecto pueden eliminarlo.'
+    : 'Solo el propietario del archivo, propietario del proyecto o usuarios con permiso de eliminación pueden borrarlo.'
 
   void project
   return (
@@ -267,7 +286,12 @@ export function FileContextMenu(props: FileContextMenuProps) {
             onClose()
             onRename(f)
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
+          disabled={!canEditFiles}
+          title={canEditFiles ? undefined : 'No tienes permiso para renombrar este archivo'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground',
+            !canEditFiles && 'opacity-50 cursor-not-allowed'
+          )}
         >
           <Edit3 className="w-4 h-4" />
           Renombrar
@@ -277,7 +301,12 @@ export function FileContextMenu(props: FileContextMenuProps) {
             onClose()
             onMoveCopy(f)
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground"
+          disabled={!canEditFiles}
+          title={canEditFiles ? undefined : 'No tienes permiso para mover o copiar este archivo'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground',
+            !canEditFiles && 'opacity-50 cursor-not-allowed'
+          )}
         >
           <ArrowRightLeft className="w-4 h-4" />
           Mover / Copiar
@@ -393,13 +422,15 @@ export type DocsAreaContextMenuProps = {
   createPending: boolean
   isUploading: boolean
   uploadPending: boolean
+  canCreateFolder: boolean
+  canUploadFile: boolean
   onClose: () => void
   onCreateFolder: () => void
   onUploadFile: () => void
 }
 
 export function DocsAreaContextMenu(props: DocsAreaContextMenuProps) {
-  const { menu, project, createPending, isUploading, uploadPending, onClose, onCreateFolder, onUploadFile } = props
+  const { menu, project, createPending, isUploading, uploadPending, canCreateFolder, canUploadFile, onClose, onCreateFolder, onUploadFile } = props
   if (!menu) return null
   const MENU_W = 220
   const MENU_H = 108
@@ -424,8 +455,12 @@ export function DocsAreaContextMenu(props: DocsAreaContextMenuProps) {
             onClose()
             onCreateFolder()
           }}
-          disabled={!project || createPending}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground disabled:opacity-50"
+          disabled={!project || createPending || !canCreateFolder}
+          title={canCreateFolder ? undefined : 'No tienes permiso para crear carpetas en este proyecto'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground disabled:opacity-50',
+            !canCreateFolder && 'cursor-not-allowed'
+          )}
         >
           <FolderPlus className="w-4 h-4" />
           Crear carpeta
@@ -435,8 +470,12 @@ export function DocsAreaContextMenu(props: DocsAreaContextMenuProps) {
             onClose()
             onUploadFile()
           }}
-          disabled={isUploading || uploadPending}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground disabled:opacity-50"
+          disabled={isUploading || uploadPending || !canUploadFile}
+          title={canUploadFile ? undefined : 'No tienes permiso para subir archivos en este proyecto'}
+          className={clsx(
+            'w-full flex items-center gap-2 px-3 py-2 rounded-md hover:bg-surface-secondary text-foreground disabled:opacity-50',
+            !canUploadFile && 'cursor-not-allowed'
+          )}
         >
           <Upload className="w-4 h-4" />
           Subir archivo
